@@ -456,28 +456,52 @@ static void DrawRealisticThermalOverlay(void)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
+    // Camera effect - dark vignette border for camera look
+    glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
+    float borderSize = 60.0f;
+    glBegin(GL_QUADS);
+    // Top border
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, borderSize);
+    glVertex2f(0, borderSize);
+    // Bottom border
+    glVertex2f(0, screenHeight - borderSize);
+    glVertex2f(screenWidth, screenHeight - borderSize);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    // Left border
+    glVertex2f(0, 0);
+    glVertex2f(borderSize, 0);
+    glVertex2f(borderSize, screenHeight);
+    glVertex2f(0, screenHeight);
+    // Right border
+    glVertex2f(screenWidth - borderSize, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(screenWidth - borderSize, screenHeight);
+    glEnd();
+    
     // Draw thermal border effect if thermal mode is active
     if (gThermalMode > 0) {
-        glColor4f(0.0f, 1.0f, 0.0f, 0.3f); // Subtle green tint
+        glColor4f(0.0f, 1.0f, 0.0f, 0.2f); // Subtle green tint
         glBegin(GL_QUADS);
         // Top border
-        glVertex2f(0, 0);
-        glVertex2f(screenWidth, 0);
-        glVertex2f(screenWidth, 20);
-        glVertex2f(0, 20);
+        glVertex2f(borderSize, borderSize);
+        glVertex2f(screenWidth - borderSize, borderSize);
+        glVertex2f(screenWidth - borderSize, borderSize + 10);
+        glVertex2f(borderSize, borderSize + 10);
         // Bottom border
-        glVertex2f(0, screenHeight - 20);
-        glVertex2f(screenWidth, screenHeight - 20);
-        glVertex2f(screenWidth, screenHeight);
-        glVertex2f(0, screenHeight);
+        glVertex2f(borderSize, screenHeight - borderSize - 10);
+        glVertex2f(screenWidth - borderSize, screenHeight - borderSize - 10);
+        glVertex2f(screenWidth - borderSize, screenHeight - borderSize);
+        glVertex2f(borderSize, screenHeight - borderSize);
         glEnd();
     }
     
-    // Military-style targeting brackets [ ] - FIXED SIZE
+    // Draw crosshair in center
     float centerX = screenWidth / 2.0f;
     float centerY = screenHeight / 2.0f;
-    float bracketSize = 50.0f;  // Fixed size - doesn't change with zoom
-    float bracketLength = 20.0f;
     
     // Set color based on lock status
     if (IsLockOnActive()) {
@@ -487,6 +511,21 @@ static void DrawRealisticThermalOverlay(void)
     }
     
     glLineWidth(2.0f);
+    
+    // Central crosshair
+    glBegin(GL_LINES);
+    // Horizontal line
+    glVertex2f(centerX - 20, centerY);
+    glVertex2f(centerX + 20, centerY);
+    // Vertical line
+    glVertex2f(centerX, centerY - 20);
+    glVertex2f(centerX, centerY + 20);
+    glEnd();
+    
+    // Military-style targeting brackets [ ] - FIXED SIZE
+    float bracketSize = 50.0f;  // Fixed size - doesn't change with zoom
+    float bracketLength = 20.0f;
+    
     glBegin(GL_LINES);
     
     // Top-left bracket [
@@ -513,6 +552,21 @@ static void DrawRealisticThermalOverlay(void)
     glVertex2f(centerX + bracketSize, centerY + bracketSize);
     glVertex2f(centerX + bracketSize, centerY + bracketSize - bracketLength);
     
+    glEnd();
+    
+    
+    // Corner indicators
+    glBegin(GL_LINES);
+    // Top corners
+    glVertex2f(borderSize + 20, borderSize + 20);
+    glVertex2f(borderSize + 40, borderSize + 20);
+    glVertex2f(borderSize + 20, borderSize + 20);
+    glVertex2f(borderSize + 20, borderSize + 40);
+    
+    glVertex2f(screenWidth - borderSize - 20, borderSize + 20);
+    glVertex2f(screenWidth - borderSize - 40, borderSize + 20);
+    glVertex2f(screenWidth - borderSize - 20, borderSize + 20);
+    glVertex2f(screenWidth - borderSize - 20, borderSize + 40);
     glEnd();
     
     // Center dot

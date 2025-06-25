@@ -5,21 +5,26 @@
 -- Global variables
 flir_start_time = flir_start_time or os.time()
 
+-- Dataref variables (declared once to prevent stack overflow)
+local view_type_ref = dataref_table("sim/graphics/view/view_type")
+local manipulator_ref = dataref_table("sim/operation/prefs/misc/manipulator_disabled")
+local zulu_time_ref = dataref_table("sim/time/zulu_time_sec")
+local latitude_ref = dataref_table("sim/flightmodel/position/latitude") 
+local longitude_ref = dataref_table("sim/flightmodel/position/longitude")
+local altitude_ref = dataref_table("sim/flightmodel/position/elevation")
+local ground_speed_ref = dataref_table("sim/flightmodel/position/groundspeed")
+local heading_ref = dataref_table("sim/flightmodel/position/psi")
+
 function draw_flir_hud()
-    -- Check if FLIR camera is active via shared dataref
-    local flir_active = dataref_table("sim/operation/prefs/misc/manipulator_disabled")
-    
-    -- Only draw HUD when FLIR camera is actually active (manipulator disabled indicates camera mode)
-    local view_type = dataref_table("sim/graphics/view/view_type")
-    
-    if view_type[0] == 1026 and flir_active[0] == 1 then  -- External view AND camera active
-        -- Get basic aircraft data safely
-        local zulu_time = dataref_table("sim/time/zulu_time_sec")[0]
-        local latitude = dataref_table("sim/flightmodel/position/latitude")[0]
-        local longitude = dataref_table("sim/flightmodel/position/longitude")[0]
-        local altitude_msl = dataref_table("sim/flightmodel/position/elevation")[0]
-        local ground_speed = dataref_table("sim/flightmodel/position/groundspeed")[0]
-        local heading = dataref_table("sim/flightmodel/position/psi")[0]
+    -- Only draw HUD when FLIR camera is actually active
+    if view_type_ref[0] == 1026 and manipulator_ref[0] == 1 then  -- External view AND camera active
+        -- Get basic aircraft data safely using pre-declared datarefs
+        local zulu_time = zulu_time_ref[0]
+        local latitude = latitude_ref[0]
+        local longitude = longitude_ref[0]
+        local altitude_msl = altitude_ref[0]
+        local ground_speed = ground_speed_ref[0]
+        local heading = heading_ref[0]
         
         -- Convert zulu time to HH:MM format
         local hours = math.floor(zulu_time / 3600) % 24
