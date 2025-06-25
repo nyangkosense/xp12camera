@@ -53,6 +53,9 @@ void SetArbitraryLockPoint(float currentPan, float currentTilt, float distance)
         return;
     }
     
+    // SIMPLE APPROACH: Just store current pan/tilt as the target direction
+    // This is what most military systems do - lock the current LOS (Line of Sight)
+    
     // Get current aircraft position in OpenGL coordinates
     double planeX = XPLMGetDataf(gPlaneX);
     double planeY = XPLMGetDataf(gPlaneY);
@@ -61,28 +64,29 @@ void SetArbitraryLockPoint(float currentPan, float currentTilt, float distance)
     
     // Calculate camera position (belly-mounted, slightly forward)
     float headingRad = planeHeading * M_PI / 180.0f;
-    double cameraX = planeX + 3.0 * sin(headingRad);  // 3m forward
+    double cameraX = planeX + 3.0 * sin(headingRad);  // 3m forward (east)
     double cameraY = planeY - 5.0;                    // 5m below
-    double cameraZ = planeZ + 3.0 * cos(headingRad);  // Note: Z+ is south
+    double cameraZ = planeZ - 3.0 * cos(headingRad);  // 3m forward (north, Z+ is south)
     
-    // Calculate absolute camera direction
+    // Calculate absolute camera direction in world space
     float absoluteHeading = planeHeading + currentPan;
-    float headingRadAbs = absoluteHeading * M_PI / 180.0f;
     float pitchRad = currentTilt * M_PI / 180.0f;
     
-    // Calculate target point in OpenGL coordinates
-    // X-Plane: X=East, Y=Up, Z=South, camera starts facing -Z (north)
+    // Project target point forward from camera
     double horizontalDistance = distance * cos(pitchRad);
-    gTargetX = cameraX + horizontalDistance * sin(headingRadAbs);    // East component
-    gTargetY = cameraY + distance * sin(pitchRad);                   // Altitude component  
-    gTargetZ = cameraZ - horizontalDistance * cos(headingRadAbs);    // South component (note minus for north)
+    double headingRadAbs = absoluteHeading * M_PI / 180.0f;
+    
+    // Target calculation - positive angles go clockwise from north
+    gTargetX = cameraX + horizontalDistance * sin(headingRadAbs);     // East component  
+    gTargetY = cameraY + distance * sin(pitchRad);                    // Up component
+    gTargetZ = cameraZ - horizontalDistance * cos(headingRadAbs);     // North component (Z+ is south)
     
     gLockAcquisitionTime = XPLMGetDataf(XPLMFindDataRef("sim/time/total_running_time_sec"));
     gLockOnActive = 1;
     
     char msg[256];
-    sprintf(msg, "FLIR Lock-On: Target acquired at OpenGL coords (%.1f, %.1f, %.1f)\n", 
-            gTargetX, gTargetY, gTargetZ);
+    sprintf(msg, "FLIR Lock-On: Plane hdg=%.1f°, Pan=%.1f°, Abs=%.1f°, Target=(%.1f,%.1f,%.1f)\n", 
+            planeHeading, currentPan, absoluteHeading, gTargetX, gTargetY, gTargetZ);
     XPLMDebugString(msg);
 }
 
@@ -100,9 +104,9 @@ void UpdateCameraToLockPoint(float* outPan, float* outTilt)
     
     // Calculate current camera position (same as in SetArbitraryLockPoint)
     float headingRad = planeHeading * M_PI / 180.0f;
-    double cameraX = planeX + 3.0 * sin(headingRad);  // 3m forward
+    double cameraX = planeX + 3.0 * sin(headingRad);  // 3m forward (east)
     double cameraY = planeY - 5.0;                    // 5m below  
-    double cameraZ = planeZ + 3.0 * cos(headingRad);  // Note: Z+ is south
+    double cameraZ = planeZ - 3.0 * cos(headingRad);  // 3m forward (north, Z+ is south)
     
     // Calculate vector from camera to target
     double dx = gTargetX - cameraX;  // East component
@@ -120,8 +124,15 @@ void UpdateCameraToLockPoint(float* outPan, float* outTilt)
     
     // Convert vector to spherical coordinates
     // X-Plane: Camera faces -Z initially (north), X=East, Z=South
-    float targetHeading = atan2(dx, -dz) * 180.0f / M_PI;  // Note: -dz for north=0°
+    // For heading: 0° = north = -Z direction, 90° = east = +X direction
+    float targetHeading = atan2(dx, -dz) * 180.0f / M_PI;  // atan2(East, North)
     float targetPitch = atan2(dy, horizontalDist) * 180.0f / M_PI;
+    
+    // Debug coordinate system
+    char coordMsg[256];
+    sprintf(coordMsg, "FLIR Debug: dx=%.1f(E), dy=%.1f(U), dz=%.1f(S), camera facing %.1f°\n", 
+            dx, dy, dz, planeHeading);
+    XPLMDebugString(coordMsg);
     
     // Convert absolute heading to relative camera pan
     *outPan = targetHeading - planeHeading;
@@ -174,7 +185,7 @@ void GetLockOnStatus(char* statusBuffer, int bufferSize)
         float headingRad = planeHeading * M_PI / 180.0f;
         double cameraX = planeX + 3.0 * sin(headingRad);
         double cameraY = planeY - 5.0;
-        double cameraZ = planeZ + 3.0 * cos(headingRad);
+        double cameraZ = planeZ - 3.0 * cos(headingRad);
         
         // Calculate distance to target
         double dx = gTargetX - cameraX;
