@@ -87,7 +87,7 @@ void UpdateCameraToLockPoint(float* outPan, float* outTilt)
         return;
     }
     
-    // Get current aircraft position
+    // Get current aircraft position and orientation
     float planeX = XPLMGetDataf(gPlaneX);
     float planeY = XPLMGetDataf(gPlaneY);
     float planeZ = XPLMGetDataf(gPlaneZ);
@@ -109,21 +109,33 @@ void UpdateCameraToLockPoint(float* outPan, float* outTilt)
         return;
     }
     
-    // Calculate required camera angles
+    // Calculate absolute heading to target (in world coordinates)
     float targetHeading = atan2(dx, dz) * 180.0f / M_PI;
+    
+    // Calculate tilt angle to target
     float targetTilt = atan2(dy, horizontalDist) * 180.0f / M_PI;
     
-    // Convert to camera-relative angles
+    // Convert absolute world heading to relative camera pan
+    // This is the key fix - we need to account for aircraft heading changes
     *outPan = targetHeading - planeHeading;
     *outTilt = targetTilt;
     
-    // Normalize pan angle to -180 to +180
+    // Normalize pan angle to -180 to +180 degrees
     while (*outPan > 180.0f) *outPan -= 360.0f;
     while (*outPan < -180.0f) *outPan += 360.0f;
     
-    // Clamp tilt to reasonable limits
-    if (*outTilt > 90.0f) *outTilt = 90.0f;
+    // Clamp tilt to reasonable camera limits
+    if (*outTilt > 45.0f) *outTilt = 45.0f;
     if (*outTilt < -90.0f) *outTilt = -90.0f;
+    
+    // Update stored angles for reference
+    gLockOnPan = *outPan;
+    gLockOnTilt = *outTilt;
+    
+    char debugMsg[256];
+    sprintf(debugMsg, "FLIR Lock-On: Target at %.1f°, Pan=%.1f°, Tilt=%.1f°, Dist=%.1fm\n", 
+            targetHeading, *outPan, *outTilt, totalDist);
+    // Uncomment for debugging: XPLMDebugString(debugMsg);
 }
 
 void DisableLockOn()

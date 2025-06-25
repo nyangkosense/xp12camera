@@ -16,8 +16,8 @@ local ground_speed_ref = dataref_table("sim/flightmodel/position/groundspeed")
 local heading_ref = dataref_table("sim/flightmodel/position/psi")
 
 function draw_flir_hud()
-    -- Only draw HUD when FLIR camera is actually active
-    if view_type_ref[0] == 1026 and manipulator_ref[0] == 1 then  -- External view AND camera active
+    -- Only draw HUD when in external view (camera view)
+    if view_type_ref[0] == 1026 then  -- External view
         -- Get basic aircraft data safely using pre-declared datarefs
         local zulu_time = zulu_time_ref[0]
         local latitude = latitude_ref[0]

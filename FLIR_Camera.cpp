@@ -13,6 +13,7 @@
 
  #include <string.h>
  #include <stdio.h>
+ #include <stdlib.h>
  #include <math.h>
  #ifndef M_PI
  #define M_PI 3.14159265358979323846
@@ -456,46 +457,24 @@ static void DrawRealisticThermalOverlay(void)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Camera effect - dark vignette border for camera look
-    glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
-    float borderSize = 60.0f;
-    glBegin(GL_QUADS);
-    // Top border
-    glVertex2f(0, 0);
-    glVertex2f(screenWidth, 0);
-    glVertex2f(screenWidth, borderSize);
-    glVertex2f(0, borderSize);
-    // Bottom border
-    glVertex2f(0, screenHeight - borderSize);
-    glVertex2f(screenWidth, screenHeight - borderSize);
-    glVertex2f(screenWidth, screenHeight);
-    glVertex2f(0, screenHeight);
-    // Left border
-    glVertex2f(0, 0);
-    glVertex2f(borderSize, 0);
-    glVertex2f(borderSize, screenHeight);
-    glVertex2f(0, screenHeight);
-    // Right border
-    glVertex2f(screenWidth - borderSize, 0);
-    glVertex2f(screenWidth, 0);
-    glVertex2f(screenWidth, screenHeight);
-    glVertex2f(screenWidth - borderSize, screenHeight);
-    glEnd();
-    
-    // Draw thermal border effect if thermal mode is active
+    // Noise filter effect for thermal camera realism
     if (gThermalMode > 0) {
-        glColor4f(0.0f, 1.0f, 0.0f, 0.2f); // Subtle green tint
-        glBegin(GL_QUADS);
-        // Top border
-        glVertex2f(borderSize, borderSize);
-        glVertex2f(screenWidth - borderSize, borderSize);
-        glVertex2f(screenWidth - borderSize, borderSize + 10);
-        glVertex2f(borderSize, borderSize + 10);
-        // Bottom border
-        glVertex2f(borderSize, screenHeight - borderSize - 10);
-        glVertex2f(screenWidth - borderSize, screenHeight - borderSize - 10);
-        glVertex2f(screenWidth - borderSize, screenHeight - borderSize);
-        glVertex2f(borderSize, screenHeight - borderSize);
+        glColor4f(0.8f, 0.8f, 0.8f, 0.1f);
+        glBegin(GL_POINTS);
+        for (int i = 0; i < 500; i++) {
+            float x = (rand() % screenWidth);
+            float y = (rand() % screenHeight);
+            glVertex2f(x, y);
+        }
+        glEnd();
+        
+        // Subtle scan lines
+        glColor4f(0.7f, 0.7f, 0.7f, 0.05f);
+        glBegin(GL_LINES);
+        for (int y = 0; y < screenHeight; y += 4) {
+            glVertex2f(0, y);
+            glVertex2f(screenWidth, y);
+        }
         glEnd();
     }
     
@@ -505,9 +484,9 @@ static void DrawRealisticThermalOverlay(void)
     
     // Set color based on lock status
     if (IsLockOnActive()) {
-        glColor4f(1.0f, 0.0f, 0.0f, 0.8f); // Red when locked
+        glColor4f(1.0f, 0.0f, 0.0f, 0.9f); // Red when locked
     } else {
-        glColor4f(0.0f, 1.0f, 0.0f, 0.8f); // Green when scanning
+        glColor4f(0.0f, 1.0f, 0.0f, 0.9f); // Green when scanning
     }
     
     glLineWidth(2.0f);
@@ -554,23 +533,8 @@ static void DrawRealisticThermalOverlay(void)
     
     glEnd();
     
-    
-    // Corner indicators
-    glBegin(GL_LINES);
-    // Top corners
-    glVertex2f(borderSize + 20, borderSize + 20);
-    glVertex2f(borderSize + 40, borderSize + 20);
-    glVertex2f(borderSize + 20, borderSize + 20);
-    glVertex2f(borderSize + 20, borderSize + 40);
-    
-    glVertex2f(screenWidth - borderSize - 20, borderSize + 20);
-    glVertex2f(screenWidth - borderSize - 40, borderSize + 20);
-    glVertex2f(screenWidth - borderSize - 20, borderSize + 20);
-    glVertex2f(screenWidth - borderSize - 20, borderSize + 40);
-    glEnd();
-    
     // Center dot
-    glPointSize(4.0f);
+    glPointSize(3.0f);
     glBegin(GL_POINTS);
     glVertex2f(centerX, centerY);
     glEnd();
