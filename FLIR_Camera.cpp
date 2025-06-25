@@ -18,12 +18,6 @@
  #define M_PI 3.14159265358979323846
  #endif
  #include "XPLMDisplay.h"
- #define xplm_Phase_Modern3D ((XPLMDrawingPhase)14)
- #ifdef xplm_Phase_Modern3D
-#pragma message("✅ xplm_Phase_Modern3D is defined")
-#else
-#pragma message("❌ xplm_Phase_Modern3D is NOT defined")
-#endif
  #include "XPLMUtilities.h"
  #include "XPLMCamera.h"
  #include "XPLMDataAccess.h"
@@ -351,7 +345,7 @@ static float GetDistanceToCamera(float x, float y, float z);
          float planeY = XPLMGetDataf(gPlaneY);
          float planeZ = XPLMGetDataf(gPlaneZ);
          float planeHeading = XPLMGetDataf(gPlaneHeading);
-         float planePitch = XPLMGetDataf(gPlanePitch);
+         // float planePitch = XPLMGetDataf(gPlanePitch); // unused for now
          float planeRoll = XPLMGetDataf(gPlaneRoll);
  
          // Convert to radians
