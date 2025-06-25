@@ -1,10 +1,16 @@
 -- FLIR Camera HUD Display Script for FlyWithLua
 -- Simplified version to prevent engine crashes
+-- Toggle with macro: FLIR Toggle HUD
 
 -- Global variables
 flir_start_time = flir_start_time or os.time()
+flir_hud_enabled = flir_hud_enabled or true
 
 function draw_flir_hud()
+    -- Only draw if HUD is enabled
+    if not flir_hud_enabled then
+        return
+    end
     -- Simple check for external view
     local view_type = XPLMGetDatai(XPLMFindDataRef("sim/graphics/view/view_type"))
     
@@ -52,7 +58,20 @@ function draw_flir_hud()
     end
 end
 
+-- Toggle function
+function toggle_flir_hud()
+    flir_hud_enabled = not flir_hud_enabled
+    if flir_hud_enabled then
+        logMsg("FLIR HUD: Enabled")
+    else
+        logMsg("FLIR HUD: Disabled")
+    end
+end
+
 -- Register drawing function
 do_every_draw("draw_flir_hud()")
 
-logMsg("FLIR HUD Simple Script Loaded")
+-- Add macro for toggling HUD
+add_macro("FLIR: Toggle HUD", "toggle_flir_hud()", "", "activate")
+
+logMsg("FLIR HUD Simple Script Loaded - Use 'FLIR: Toggle HUD' macro to toggle")
