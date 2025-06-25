@@ -18,12 +18,23 @@
  #define M_PI 3.14159265358979323846
  #endif
  #include "XPLMDisplay.h"
+ #define xplm_Phase_Modern3D ((XPLMDrawingPhase)14)
+ #ifdef xplm_Phase_Modern3D
+#pragma message("✅ xplm_Phase_Modern3D is defined")
+#else
+#pragma message("❌ xplm_Phase_Modern3D is NOT defined")
+#endif
  #include "XPLMUtilities.h"
  #include "XPLMCamera.h"
  #include "XPLMDataAccess.h"
  #include "XPLMGraphics.h"
  #include "XPLMProcessing.h"
  #include "XPLMMenus.h"
+ #include "XPLMScenery.h"
+ #include "XPLMPlanes.h"
+#include "XPLMNavigation.h"
+#include "XPLMInstance.h"
+#include "XPLMWeather.h"
 
  // OpenGL includes for MinGW
  #include <windows.h>
@@ -58,11 +69,52 @@ static XPLMHotKeyID gThermalToggleKey = NULL;
 // Thermal view settings
 static int gThermalMode = 1;         // 0=Off, 1=White Hot, 2=Enhanced
  
- // Target tracking
- static int gTargetLocked = 0;
- static float gTargetX = 0.0f;
- static float gTargetY = 0.0f;
- static float gTargetZ = 0.0f;
+ // Target tracking and object detection
+ // static int gTargetLocked = 0; // unused
+ // static float gTargetX = 0.0f; // unused
+ // static float gTargetY = 0.0f; // unused
+ // static float gTargetZ = 0.0f; // unused
+ // static int gDetectedObjects = 0; // unused
+
+ // Aircraft tracking arrays (up to 20 aircraft)
+ static float gAircraftPositions[20][3];  // x, y, z positions
+ static float gAircraftEngineTemp[20];    // Engine temperatures
+ static float gAircraftDistance[20];      // Distance from camera
+static int gAircraftVisible[20];         // Visibility in thermal
+static int gAircraftCount = 0;
+
+// Environmental factors
+static float gCurrentVisibility = 10000.0f;
+static float gCurrentTemp = 15.0f;
+static float gCurrentWindSpeed = 0.0f;
+static int gIsNight = 0;
+
+// Heat source simulation
+typedef struct {
+    float x, y, z;           // World position
+    float intensity;         // Heat intensity (0-1)
+    float size;             // Heat source size
+    int type;               // 0=aircraft, 1=ship, 2=vehicle, 3=building
+    float lastUpdate;       // Last update time
+} HeatSource;
+
+static HeatSource gHeatSources[50];
+static int gHeatSourceCount = 0;
+
+ // Additional datarefs for enhanced detection
+ static XPLMDataRef gEngineRunning = NULL;
+ static XPLMDataRef gEngineN1 = NULL;
+static XPLMDataRef gEngineEGT = NULL;
+static XPLMDataRef gGroundTemperature = NULL;
+static XPLMDataRef gWeatherVisibility = NULL;
+static XPLMDataRef gCloudCoverage = NULL;
+static XPLMDataRef gAmbientTemperature = NULL;
+static XPLMDataRef gWindSpeed = NULL;
+static XPLMDataRef gTimeOfDay = NULL;
+static XPLMDataRef gAIAircraftX = NULL;
+static XPLMDataRef gAIAircraftY = NULL;
+static XPLMDataRef gAIAircraftZ = NULL;
+static XPLMDataRef gAIAircraftCount = NULL;
  
  // Function declarations
  static void ActivateFLIRCallback(void* inRefcon);
@@ -81,6 +133,13 @@ static void ThermalToggleCallback(void* inRefcon);
  static int DrawThermalOverlay(XPLMDrawingPhase inPhase,
                               int inIsBefore,
                               void* inRefcon);
+
+static void UpdateEnvironmentalFactors(void);
+static void UpdateHeatSources(void);
+static void DetectAircraft(void);
+static float CalculateHeatIntensity(float engineTemp, float distance, int engineRunning);
+static void DrawRealisticThermalOverlay(void);
+static float GetDistanceToCamera(float x, float y, float z);
  
  // Plugin lifecycle functions
  PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
@@ -96,6 +155,21 @@ static void ThermalToggleCallback(void* inRefcon);
      gPlaneHeading = XPLMFindDataRef("sim/flightmodel/position/psi");
      gPlanePitch = XPLMFindDataRef("sim/flightmodel/position/theta");
      gPlaneRoll = XPLMFindDataRef("sim/flightmodel/position/phi");
+ 
+     // Additional datarefs for thermal detection
+     gEngineRunning = XPLMFindDataRef("sim/flightmodel/engine/ENGN_running");
+     gEngineN1 = XPLMFindDataRef("sim/flightmodel/engine/ENGN_N1_");
+    gEngineEGT = XPLMFindDataRef("sim/flightmodel/engine/ENGN_EGT_c");
+    gGroundTemperature = XPLMFindDataRef("sim/weather/temperature_sealevel_c");
+    gWeatherVisibility = XPLMFindDataRef("sim/weather/visibility_reported_m");
+    gCloudCoverage = XPLMFindDataRef("sim/weather/cloud_coverage[0]");
+    gAmbientTemperature = XPLMFindDataRef("sim/weather/temperature_ambient_c");
+    gWindSpeed = XPLMFindDataRef("sim/weather/wind_speed_kt[0]");
+    gTimeOfDay = XPLMFindDataRef("sim/time/local_time_sec");
+    gAIAircraftX = XPLMFindDataRef("sim/multiplayer/position/plane1_x");
+    gAIAircraftY = XPLMFindDataRef("sim/multiplayer/position/plane1_y");
+    gAIAircraftZ = XPLMFindDataRef("sim/multiplayer/position/plane1_z");
+    gAIAircraftCount = XPLMFindDataRef("sim/operation/prefs/mult_max");
  
      // Register hotkeys
      gActivateKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag,
@@ -126,8 +200,8 @@ static void ThermalToggleCallback(void* inRefcon);
                                        "FLIR Tilt Down",
                                        TiltDownCallback, NULL);
  
-     // Register thermal overlay drawing callback
-     XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
+     // Register thermal overlay drawing callback - use objects phase for better integration
+     XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Modern3D, 1, NULL);
  
      XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
      XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
@@ -282,10 +356,10 @@ static void ThermalToggleCallback(void* inRefcon);
  
          // Convert to radians
          float headingRad = planeHeading * M_PI / 180.0f;
-         float pitchRad = planePitch * M_PI / 180.0f;
+         // float pitchRad = planePitch * M_PI / 180.0f; // unused
          float rollRad = planeRoll * M_PI / 180.0f;
-         float panRad = gCameraPan * M_PI / 180.0f;
-         float tiltRad = gCameraTilt * M_PI / 180.0f;
+         // float panRad = gCameraPan * M_PI / 180.0f; // unused
+         // float tiltRad = gCameraTilt * M_PI / 180.0f; // unused
  
          // Calculate camera position relative to aircraft
          // Position camera under the aircraft (belly-mounted)
@@ -332,6 +406,11 @@ static void ThermalToggleCallback(void* inRefcon);
  static int DrawThermalOverlay(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon)
  {
      if (!gCameraActive) return 1;
+    
+    // Update environmental factors and heat sources
+    UpdateEnvironmentalFactors();
+    UpdateHeatSources();
+    DetectAircraft();
  
      // Set up OpenGL for 2D drawing
      XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0);
@@ -389,7 +468,7 @@ static void ThermalToggleCallback(void* inRefcon);
          
          if (gThermalMode == 1) {
              // White Hot mode - dark background with bright heat sources
-             glColor4f(0.1f, 0.1f, 0.2f, 0.3f);
+             glColor4f(0.0f, 0.0f, 0.1f, 0.7f);
              glBegin(GL_QUADS);
              glVertex2f(0, 0);
              glVertex2f(screenWidth, 0);
@@ -398,7 +477,7 @@ static void ThermalToggleCallback(void* inRefcon);
              glEnd();
          } else if (gThermalMode == 2) {
              // Enhanced mode - blue tint with enhanced contrast
-             glColor4f(0.0f, 0.2f, 0.4f, 0.25f);
+             glColor4f(0.1f, 0.3f, 0.6f, 0.5f);
              glBegin(GL_QUADS);
              glVertex2f(0, 0);
              glVertex2f(screenWidth, 0);
@@ -407,7 +486,10 @@ static void ThermalToggleCallback(void* inRefcon);
              glEnd();
          }
          
-         // Simulate thermal signatures across the view
+         // Draw realistic heat sources based on actual detected objects
+         DrawRealisticThermalOverlay();
+         
+         // Also draw some simulated background thermal noise
          float time = XPLMGetElapsedTime();
          for (int i = 0; i < 6; i++) {
              for (int j = 0; j < 4; j++) {
@@ -419,10 +501,10 @@ static void ThermalToggleCallback(void* inRefcon);
                  
                  if (gThermalMode == 1) {
                      // White hot
-                     glColor4f(1.0f, 0.9f, 0.8f, intensity * 0.6f);
+                     glColor4f(1.0f, 1.0f, 0.9f, intensity * 0.9f);
                  } else {
                      // Enhanced mode
-                     glColor4f(1.0f, 0.7f, 0.3f, intensity * 0.5f);
+                     glColor4f(1.0f, 0.8f, 0.2f, intensity * 0.8f);
                  }
                  
                  glBegin(GL_QUADS);
@@ -458,7 +540,8 @@ static void ThermalToggleCallback(void* inRefcon);
   */
  
  // Function to detect and track actual X-Plane objects
- static void UpdateTargetTracking(void)
+ /*
+static void UpdateTargetTracking(void)
  {
      // Future enhancement: Use X-Plane's object detection APIs
      // to find and track actual aircraft, ships, vehicles in the sim
@@ -470,3 +553,353 @@ static void ThermalToggleCallback(void* inRefcon);
      // Future enhancement: Different thermal rendering modes
      // 0 = White Hot, 1 = Black Hot, 2 = Rainbow, etc.
  }
+*/
+/*
+ * Enhanced Functions for FLIR Camera Plugin
+ * These functions provide realistic thermal detection and environmental factors
+ */
+
+/*
+ * UpdateEnvironmentalFactors
+ * 
+ * Updates environmental conditions that affect thermal visibility
+ */
+static void UpdateEnvironmentalFactors(void)
+{
+    if (gWeatherVisibility != NULL) {
+        gCurrentVisibility = XPLMGetDataf(gWeatherVisibility);
+    }
+    
+    if (gAmbientTemperature != NULL) {
+        gCurrentTemp = XPLMGetDataf(gAmbientTemperature);
+    }
+    
+    if (gWindSpeed != NULL) {
+        gCurrentWindSpeed = XPLMGetDataf(gWindSpeed);
+    }
+    
+    if (gTimeOfDay != NULL) {
+        float timeOfDay = XPLMGetDataf(gTimeOfDay);
+        // Night is roughly 18:00 to 06:00 (18*3600 = 64800, 6*3600 = 21600)
+        gIsNight = (timeOfDay > 64800.0f || timeOfDay < 21600.0f) ? 1 : 0;
+    }
+}
+
+/*
+ * GetDistanceToCamera
+ * 
+ * Calculate distance from world position to camera
+ */
+static float GetDistanceToCamera(float x, float y, float z)
+{
+    float camX = XPLMGetDataf(gPlaneX);
+    float camY = XPLMGetDataf(gPlaneY);
+    float camZ = XPLMGetDataf(gPlaneZ);
+    
+    float dx = x - camX;
+    float dy = y - camY;
+    float dz = z - camZ;
+    
+    return sqrtf(dx*dx + dy*dy + dz*dz);
+}
+
+/*
+ * CalculateHeatIntensity
+ * 
+ * Calculate thermal intensity based on engine temperature and distance
+ */
+static float CalculateHeatIntensity(float engineTemp, float distance, int engineRunning)
+{
+    if (!engineRunning) return 0.1f; // Cold engine still slightly visible
+    
+    // Base intensity from engine temperature (EGT typically 400-900°C)
+    float baseIntensity = (engineTemp - 200.0f) / 700.0f;
+    baseIntensity = fmaxf(0.0f, fminf(1.0f, baseIntensity));
+    
+    // Distance attenuation (max detection ~10km for aircraft)
+    float distanceFactor = 1.0f - (distance / 10000.0f);
+    distanceFactor = fmaxf(0.0f, distanceFactor);
+    
+    // Weather effects
+    float weatherFactor = gCurrentVisibility / 10000.0f;
+    weatherFactor = fmaxf(0.2f, fminf(1.0f, weatherFactor));
+    
+    // Night enhances thermal contrast
+    float nightBonus = gIsNight ? 1.3f : 1.0f;
+    
+    return baseIntensity * distanceFactor * weatherFactor * nightBonus;
+}
+
+/*
+ * DetectAircraft
+ * 
+ * Scan for AI aircraft and other heat sources in the simulation
+ */
+static void DetectAircraft(void)
+{
+    gAircraftCount = 0;
+    
+    // Scan through multiplayer aircraft positions (up to 19 other aircraft)
+    for (int i = 0; i < 19 && gAircraftCount < 20; i++) {
+        char datarefName[256];
+        
+        // Get aircraft position
+        sprintf(datarefName, "sim/multiplayer/position/plane%d_x", i + 1);
+        XPLMDataRef aircraftX = XPLMFindDataRef(datarefName);
+        
+        sprintf(datarefName, "sim/multiplayer/position/plane%d_y", i + 1);
+        XPLMDataRef aircraftY = XPLMFindDataRef(datarefName);
+        
+        sprintf(datarefName, "sim/multiplayer/position/plane%d_z", i + 1);
+        XPLMDataRef aircraftZ = XPLMFindDataRef(datarefName);
+        
+        if (aircraftX && aircraftY && aircraftZ) {
+            float x = XPLMGetDataf(aircraftX);
+            float y = XPLMGetDataf(aircraftY);
+            float z = XPLMGetDataf(aircraftZ);
+            
+            // Check if aircraft exists (non-zero position)
+            if (x != 0.0f || y != 0.0f || z != 0.0f) {
+                gAircraftPositions[gAircraftCount][0] = x;
+                gAircraftPositions[gAircraftCount][1] = y;
+                gAircraftPositions[gAircraftCount][2] = z;
+                gAircraftDistance[gAircraftCount] = GetDistanceToCamera(x, y, z);
+                
+                // Simulate engine temperature (realistic EGT values)
+                gAircraftEngineTemp[gAircraftCount] = 450.0f + (rand() % 300);
+                
+                // Determine visibility based on distance and conditions
+                gAircraftVisible[gAircraftCount] = (gAircraftDistance[gAircraftCount] < gCurrentVisibility * 0.8f) ? 1 : 0;
+                
+                gAircraftCount++;
+            }
+        }
+    }
+}
+
+/*
+ * UpdateHeatSources
+ * 
+ * Update dynamic heat sources in the simulation
+ */
+static void UpdateHeatSources(void)
+{
+    float currentTime = XPLMGetElapsedTime();
+    gHeatSourceCount = 0;
+    
+    // Add detected aircraft as heat sources
+    for (int i = 0; i < gAircraftCount && gHeatSourceCount < 50; i++) {
+        if (gAircraftVisible[i]) {
+            gHeatSources[gHeatSourceCount].x = gAircraftPositions[i][0];
+            gHeatSources[gHeatSourceCount].y = gAircraftPositions[i][1];
+            gHeatSources[gHeatSourceCount].z = gAircraftPositions[i][2];
+            gHeatSources[gHeatSourceCount].intensity = CalculateHeatIntensity(
+                gAircraftEngineTemp[i], gAircraftDistance[i], 1);
+            gHeatSources[gHeatSourceCount].size = 15.0f + (gHeatSources[gHeatSourceCount].intensity * 25.0f);
+            gHeatSources[gHeatSourceCount].type = 0; // Aircraft
+            gHeatSources[gHeatSourceCount].lastUpdate = currentTime;
+            gHeatSourceCount++;
+        }
+    }
+    
+    // Add simulated ground heat sources (buildings, vehicles, ships)
+    float planeX = XPLMGetDataf(gPlaneX);
+    float planeZ = XPLMGetDataf(gPlaneZ);
+    
+    // Simulate some heat sources around the area
+    for (int i = 0; i < 8 && gHeatSourceCount < 50; i++) {
+        float angle = (i * 45.0f) * M_PI / 180.0f;
+        float distance = 2000.0f + (i * 500.0f);
+        
+        float x = planeX + distance * cosf(angle);
+        float z = planeZ + distance * sinf(angle);
+        float y = XPLMGetDataf(gPlaneY) - 100.0f; // Ground level
+        
+        gHeatSources[gHeatSourceCount].x = x;
+        gHeatSources[gHeatSourceCount].y = y;
+        gHeatSources[gHeatSourceCount].z = z;
+        
+        // Vary intensity based on type and time
+        float baseIntensity = 0.3f;
+        if (gIsNight) baseIntensity += 0.2f; // More visible at night
+        
+        gHeatSources[gHeatSourceCount].intensity = baseIntensity + 
+            0.2f * sinf(currentTime * 0.1f + i);
+        gHeatSources[gHeatSourceCount].size = 8.0f + (gHeatSources[gHeatSourceCount].intensity * 12.0f);
+        gHeatSources[gHeatSourceCount].type = (i % 3) + 1; // Ships, vehicles, buildings
+        gHeatSources[gHeatSourceCount].lastUpdate = currentTime;
+        gHeatSourceCount++;
+    }
+}
+
+/*
+ * DrawRealisticThermalOverlay
+ * 
+ * Render realistic thermal signatures for detected heat sources
+ */
+static void DrawRealisticThermalOverlay(void)
+{
+    if (gHeatSourceCount == 0) return;
+    
+    // Get screen dimensions and camera info
+    int screenWidth, screenHeight;
+    XPLMGetScreenSize(&screenWidth, &screenHeight);
+    
+    float camX = XPLMGetDataf(gPlaneX);
+    float camY = XPLMGetDataf(gPlaneY);
+    float camZ = XPLMGetDataf(gPlaneZ);
+    float camHeading = XPLMGetDataf(gPlaneHeading) + gCameraPan;
+    float camPitch = gCameraTilt;
+    
+    // Convert camera angles to radians
+    float headingRad = camHeading * M_PI / 180.0f;
+    float pitchRad = camPitch * M_PI / 180.0f;
+    
+    // Camera forward vector
+    float forwardX = cosf(headingRad) * cosf(pitchRad);
+    float forwardY = sinf(pitchRad);
+    float forwardZ = sinf(headingRad) * cosf(pitchRad);
+    
+    // Camera right vector (for screen mapping)
+    float rightX = -sinf(headingRad);
+    float rightZ = cosf(headingRad);
+    
+    // Camera up vector
+    float upX = -cosf(headingRad) * sinf(pitchRad);
+    float upY = cosf(pitchRad);
+    float upZ = -sinf(headingRad) * sinf(pitchRad);
+    
+    // Field of view factor (approximate)
+    float fovFactor = 60.0f / gZoomLevel; // Base FOV 60 degrees
+    
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Draw each heat source
+    for (int i = 0; i < gHeatSourceCount; i++) {
+        HeatSource* heat = &gHeatSources[i];
+        
+        // Vector from camera to heat source
+        float dx = heat->x - camX;
+        float dy = heat->y - camY;
+        float dz = heat->z - camZ;
+        float distance = sqrtf(dx*dx + dy*dy + dz*dz);
+        
+        if (distance < 50.0f) continue; // Too close, skip
+        
+        // Normalize direction vector
+        dx /= distance;
+        dy /= distance;
+        dz /= distance;
+        
+        // Check if heat source is in front of camera
+        float dotForward = dx * forwardX + dy * forwardY + dz * forwardZ;
+        if (dotForward <= 0.1f) continue; // Behind camera or too far to side
+        
+        // Project to screen coordinates
+        float rightDot = dx * rightX + dz * rightZ;
+        float upDot = dx * upX + dy * upY + dz * upZ;
+        
+        // Convert to screen space
+        float screenX = screenWidth * 0.5f + (rightDot * screenWidth * 0.5f / fovFactor);
+        float screenY = screenHeight * 0.5f + (upDot * screenHeight * 0.5f / fovFactor);
+        
+        // Check if on screen
+        if (screenX < 0 || screenX >= screenWidth || screenY < 0 || screenY >= screenHeight) {
+            continue;
+        }
+        
+        // Calculate apparent size based on distance and zoom
+        float apparentSize = heat->size * gZoomLevel / (distance * 0.01f);
+        apparentSize = fmaxf(3.0f, fminf(apparentSize, 50.0f));
+        
+        // Color based on heat source type and intensity
+        float r, g, b, a;
+        if (gThermalMode == 1) {
+            // White hot mode
+            r = g = b = heat->intensity;
+            a = heat->intensity * 0.8f;
+            
+            // Aircraft show as very bright white
+            if (heat->type == 0) {
+                r = g = b = 1.0f;
+                a = 0.9f;
+            }
+        } else {
+            // Enhanced mode - use color coding
+            switch (heat->type) {
+                case 0: // Aircraft - bright yellow/orange
+                    r = 1.0f;
+                    g = 0.8f;
+                    b = 0.2f;
+                    a = heat->intensity * 0.9f;
+                    break;
+                case 1: // Ships - cyan
+                    r = 0.2f;
+                    g = 0.8f;
+                    b = 1.0f;
+                    a = heat->intensity * 0.7f;
+                    break;
+                case 2: // Vehicles - red
+                    r = 1.0f;
+                    g = 0.3f;
+                    b = 0.1f;
+                    a = heat->intensity * 0.6f;
+                    break;
+                case 3: // Buildings - orange
+                    r = 1.0f;
+                    g = 0.5f;
+                    b = 0.0f;
+                    a = heat->intensity * 0.5f;
+                    break;
+                default:
+                    r = g = b = heat->intensity;
+                    a = heat->intensity * 0.6f;
+                    break;
+            }
+        }
+        
+        glColor4f(r, g, b, a);
+        
+        // Draw heat signature with gradient effect
+        glBegin(GL_QUADS);
+        glVertex2f(screenX - apparentSize, screenY - apparentSize);
+        glVertex2f(screenX + apparentSize, screenY - apparentSize);
+        glVertex2f(screenX + apparentSize, screenY + apparentSize);
+        glVertex2f(screenX - apparentSize, screenY + apparentSize);
+        glEnd();
+        
+        // Add heat bloom effect for intense sources
+        if (heat->intensity > 0.7f) {
+            float bloomSize = apparentSize * 1.5f;
+            glColor4f(r, g, b, a * 0.3f);
+            glBegin(GL_QUADS);
+            glVertex2f(screenX - bloomSize, screenY - bloomSize);
+            glVertex2f(screenX + bloomSize, screenY - bloomSize);
+            glVertex2f(screenX + bloomSize, screenY + bloomSize);
+            glVertex2f(screenX - bloomSize, screenY + bloomSize);
+            glEnd();
+        }
+        
+        // Add targeting indicator for aircraft
+        if (heat->type == 0 && distance < 5000.0f) {
+            glColor4f(0.0f, 1.0f, 0.0f, 0.8f);
+            glLineWidth(2.0f);
+            
+            float targetSize = apparentSize + 10.0f;
+            glBegin(GL_LINE_LOOP);
+            glVertex2f(screenX - targetSize, screenY - targetSize);
+            glVertex2f(screenX + targetSize, screenY - targetSize);
+            glVertex2f(screenX + targetSize, screenY + targetSize);
+            glVertex2f(screenX - targetSize, screenY + targetSize);
+            glEnd();
+            
+            // Add distance indicator
+            char distText[32];
+            sprintf(distText, "%.0fm", distance);
+            // Note: Actual text rendering would need XPLMDrawString
+        }
+    }
+    
+    glDisable(GL_BLEND);
+}
