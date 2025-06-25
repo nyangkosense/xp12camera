@@ -68,10 +68,10 @@ static int gThermalMode = 1;         // 0=Off, 1=White Hot, 2=Enhanced
  // Target tracking and object detection
  static int gTargetLocked = 0;
 static float gFocusDistance = 1000.0f; // Distance to focused target
- // static float gTargetX = 0.0f; // unused
- // static float gTargetY = 0.0f; // unused
- // static float gTargetZ = 0.0f; // unused
- // static int gDetectedObjects = 0; // unused
+ static float gTargetX = 0.0f; // World position of locked target
+ static float gTargetY = 0.0f;
+ static float gTargetZ = 0.0f;
+ static int gLockedTargetIndex = -1; // Index of locked target in heat sources
 
  // Aircraft tracking arrays (up to 20 aircraft)
  static float gAircraftPositions[20][3];  // x, y, z positions
@@ -226,6 +226,8 @@ static float GetDistanceToCamera(float x, float y, float z);
     gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag,
                                       "FLIR Focus/Lock Target",
                                       FocusLockCallback, NULL);
+    
+    // Note: For text display, use FlyWithLua to read standard X-Plane datarefs
  
      return 1;
  }
@@ -434,9 +436,31 @@ static float GetDistanceToCamera(float x, float y, float z);
          outCameraPosition->y = planeY + rotatedY;
          outCameraPosition->z = planeZ + rotatedZ;
  
-         // Camera orientation - combine aircraft heading with camera pan/tilt
-         outCameraPosition->heading = planeHeading + gCameraPan;
-         outCameraPosition->pitch = gCameraTilt;
+         // Camera orientation - if locked, track target; otherwise manual control
+         if (gTargetLocked && gLockedTargetIndex >= 0 && gLockedTargetIndex < gHeatSourceCount) {
+             // Update target position from heat sources
+             gTargetX = gHeatSources[gLockedTargetIndex].x;
+             gTargetY = gHeatSources[gLockedTargetIndex].y;
+             gTargetZ = gHeatSources[gLockedTargetIndex].z;
+             
+             // Calculate angle to target
+             float dx = gTargetX - outCameraPosition->x;
+             float dy = gTargetY - outCameraPosition->y;
+             float dz = gTargetZ - outCameraPosition->z;
+             
+             // Calculate heading and pitch to target
+             float targetHeading = atan2f(dz, dx) * 180.0f / M_PI;
+             float groundDistance = sqrtf(dx*dx + dz*dz);
+             float targetPitch = -atan2f(dy, groundDistance) * 180.0f / M_PI;
+             
+             // Track the target automatically
+             outCameraPosition->heading = targetHeading;
+             outCameraPosition->pitch = targetPitch;
+         } else {
+             // Manual camera control
+             outCameraPosition->heading = planeHeading + gCameraPan;
+             outCameraPosition->pitch = gCameraTilt;
+         }
          outCameraPosition->roll = 0.0f; // Keep camera level
  
          // Apply zoom - this is the key for real magnification!
@@ -573,38 +597,12 @@ static float GetDistanceToCamera(float x, float y, float z);
          glVertex2f(0, screenHeight);
          glEnd();
          
-         // Add IR noise effect using same line drawing approach
-         float time = XPLMGetElapsedTime();
+         // Realistic IR scan lines only (no random noise)
          glLineWidth(1.0f);
+         glColor4f(0.0f, 0.0f, 0.0f, 0.15f);
          
-         // Generate IR noise pattern
-         for (int y = 0; y < screenHeight; y += 4) {
-             for (int x = 0; x < screenWidth; x += 6) {
-                 float noise = (sinf(time * 2.0f + x * 0.01f + y * 0.008f) + 
-                               cosf(time * 1.5f + x * 0.015f + y * 0.012f)) * 0.5f;
-                 
-                 if (gThermalMode == 1) {
-                     // White hot noise
-                     float intensity = 0.1f + noise * 0.15f;
-                     glColor4f(intensity, intensity, intensity * 0.9f, 0.8f);
-                 } else {
-                     // Enhanced mode noise - green tint
-                     float intensity = 0.15f + noise * 0.2f;
-                     glColor4f(intensity * 0.3f, intensity, intensity * 0.4f, 0.7f);
-                 }
-                 
-                 // Draw noise pixels as small lines
-                 glBegin(GL_LINES);
-                 glVertex2f(x, y);
-                 glVertex2f(x + 2, y);
-                 glEnd();
-             }
-         }
-         
-         // Add scan lines for authentic IR look
-         glColor4f(0.0f, 0.0f, 0.0f, 0.2f);
-         glLineWidth(1.0f);
-         for (int y = 0; y < screenHeight; y += 3) {
+         // Horizontal scan lines like real IR cameras
+         for (int y = 0; y < screenHeight; y += 2) {
              glBegin(GL_LINES);
              glVertex2f(0, y);
              glVertex2f(screenWidth, y);
@@ -618,32 +616,7 @@ static float GetDistanceToCamera(float x, float y, float z);
             DrawRealisticThermalOverlay();
         }
          
-         // Also draw some simulated background thermal noise
-         // Use the existing time variable from above
-         for (int i = 0; i < 6; i++) {
-             for (int j = 0; j < 4; j++) {
-                 float x = (i + 1) * screenWidth / 7.0f;
-                 float y = (j + 1) * screenHeight / 5.0f;
-                 
-                 float intensity = (sinf(time * 0.2f + i * 0.5f + j * 0.3f) + 1.0f) * 0.4f;
-                 float size = 12.0f + intensity * 20.0f;
-                 
-                 if (gThermalMode == 1) {
-                     // White hot
-                     glColor4f(1.0f, 1.0f, 0.9f, intensity * 0.9f);
-                 } else {
-                     // Enhanced mode
-                     glColor4f(1.0f, 0.8f, 0.2f, intensity * 0.8f);
-                 }
-                 
-                 glBegin(GL_QUADS);
-                 glVertex2f(x - size/2, y - size/2);
-                 glVertex2f(x + size/2, y - size/2);
-                 glVertex2f(x + size/2, y + size/2);
-                 glVertex2f(x - size/2, y + size/2);
-                 glEnd();
-             }
-         }
+         // No background thermal noise - cleaner IR view
          
          glDisable(GL_BLEND);
      }
@@ -669,86 +642,22 @@ static float GetDistanceToCamera(float x, float y, float z);
      glVertex2f(screenWidth - 30, screenHeight - 30); glVertex2f(screenWidth - 30, screenHeight - 30 - reticleSize);
      glEnd();
      
-     // Professional FLIR HUD using actual text rendering
-     // Get current aircraft data
-     float latitude = XPLMGetDataf(gLatitude);
-     float longitude = XPLMGetDataf(gLongitude);
-     float altitude = XPLMGetDataf(gAltitude);
-     float zuluTime = XPLMGetDataf(gZuluTime);
-     
-     // Convert Zulu time to hours:minutes
-     int hours = (int)(zuluTime / 3600.0f) % 24;
-     int minutes = (int)((zuluTime - hours * 3600) / 60.0f);
+     // Data will be exported to shared datarefs for FlyWithLua display
+     // For now, minimal built-in display only
      
      // Use X-Plane's text rendering for professional look
      glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
      
-     // Status display using simple line graphics (safer than XPLMDrawString in drawing callback)
-     // Top status indicators - using geometric shapes instead of text to avoid crashes
+     // Minimal status indicators (no confusing abstract lines)
+     // Only show essential info
      
-     // UTC time indicator (top-left corner)
+     // Zoom level indicator (bottom-left corner only)
      glLineWidth(2.0f);
+     glColor4f(0.0f, 1.0f, 0.0f, 0.8f);
      glBegin(GL_LINES);
-     // Simple time display as bars
-     for (int i = 0; i < 4; i++) {
-         int value = (i < 2) ? hours : minutes;
-         int digit = (i % 2 == 0) ? value / 10 : value % 10;
-         float x = 40 + i * 20;
-         float height = 5 + digit * 2; // Height represents digit value
-         glVertex2f(x, screenHeight - 25);
-         glVertex2f(x, screenHeight - 25 + height);
-     }
-     glEnd();
-     
-     // Zoom level display (top-right corner) 
-     glBegin(GL_LINES);
-     float zoomIndicator = gZoomLevel * 10.0f;
-     glVertex2f(screenWidth - 100, screenHeight - 25);
-     glVertex2f(screenWidth - 100 + zoomIndicator, screenHeight - 25);
-     glVertex2f(screenWidth - 100, screenHeight - 30);
-     glVertex2f(screenWidth - 100 + zoomIndicator, screenHeight - 30);
-     glEnd();
-     
-     // Thermal mode indicator (simple colored bar)
-     if (gThermalMode > 0) {
-         glLineWidth(4.0f);
-         if (gThermalMode == 1) glColor4f(1.0f, 1.0f, 1.0f, 0.8f); // White for White Hot
-         else glColor4f(0.0f, 1.0f, 0.0f, 0.8f); // Green for Enhanced
-         
-         glBegin(GL_LINES);
-         glVertex2f(30, screenHeight - 45);
-         glVertex2f(80, screenHeight - 45);
-         glEnd();
-         glColor4f(0.0f, 1.0f, 0.0f, 0.8f); // Reset to green
-     }
-     
-     // Zoom level indicator (bottom-left, simple and clean)
-     glLineWidth(2.0f);
-     glBegin(GL_LINES);
-     // Simple zoom bar
-     float zoomBar = gZoomLevel * 20.0f;
+     float zoomBar = fminf(gZoomLevel * 5.0f, 100.0f); // Scale zoom to reasonable bar length
      glVertex2f(30, 40);
      glVertex2f(30 + zoomBar, 40);
-     glVertex2f(30, 35);
-     glVertex2f(30 + zoomBar, 35);
-     glEnd();
-     
-     // Pan/Tilt position indicators (bottom-right)
-     glLineWidth(1.0f);
-     glBegin(GL_LINES);
-     // Pan indicator - horizontal line that moves
-     float panPos = (gCameraPan + 180.0f) / 360.0f * 100.0f;
-     glVertex2f(screenWidth - 150, 40);
-     glVertex2f(screenWidth - 50, 40);
-     glVertex2f(screenWidth - 150 + panPos, 35);
-     glVertex2f(screenWidth - 150 + panPos, 45);
-     
-     // Tilt indicator - vertical line that moves  
-     float tiltPos = (gCameraTilt + 90.0f) / 135.0f * 30.0f;
-     glVertex2f(screenWidth - 30, 30);
-     glVertex2f(screenWidth - 30, 60);
-     glVertex2f(screenWidth - 35, 30 + tiltPos);
-     glVertex2f(screenWidth - 25, 30 + tiltPos);
      glEnd();
      
      // Target lock indicator (minimal and professional)
@@ -1231,20 +1140,22 @@ static void FocusLockCallback(void* inRefcon)
             
             if (nearestTarget >= 0) {
                 gTargetLocked = 1;
+                gLockedTargetIndex = nearestTarget;
                 gFocusDistance = nearestDistance;
+                gTargetX = gHeatSources[nearestTarget].x;
+                gTargetY = gHeatSources[nearestTarget].y;
+                gTargetZ = gHeatSources[nearestTarget].z;
                 char msg[256];
-                sprintf(msg, "FLIR Camera System: Target LOCKED at %.0fm\n", gFocusDistance);
+                sprintf(msg, "FLIR Camera System: Target LOCKED at %.0fm - Camera will track automatically\n", gFocusDistance);
                 XPLMDebugString(msg);
             } else {
-                // No target found, just lock current view
-                gTargetLocked = 1;
-                gFocusDistance = 1000.0f;
-                XPLMDebugString("FLIR Camera System: Focus LOCKED on current view\n");
+                XPLMDebugString("FLIR Camera System: No targets found for lock-on\n");
             }
         } else {
             // Unlock target
             gTargetLocked = 0;
-            XPLMDebugString("FLIR Camera System: Target UNLOCKED\n");
+            gLockedTargetIndex = -1;
+            XPLMDebugString("FLIR Camera System: Target UNLOCKED - Manual control restored\n");
         }
     }
 }
