@@ -59,15 +59,17 @@ void SetArbitraryLockPoint(float currentPan, float currentTilt, float distance)
     float planeZ = XPLMGetDataf(gPlaneZ);
     float planeHeading = XPLMGetDataf(gPlaneHeading);
     
-    // Convert camera angles to radians
-    float panRad = (planeHeading + currentPan) * M_PI / 180.0f;
+    // Convert camera angles to radians - fix coordinate system
+    float absoluteHeading = planeHeading + currentPan;
+    float headingRad = absoluteHeading * M_PI / 180.0f;
     float tiltRad = currentTilt * M_PI / 180.0f;
     
-    // Calculate world coordinates of the lock point
-    // Project forward from camera position based on current pan/tilt
-    gLockedWorldX = planeX + distance * sin(panRad) * cos(tiltRad);
-    gLockedWorldY = planeY + distance * sin(tiltRad);
-    gLockedWorldZ = planeZ + distance * cos(panRad) * cos(tiltRad);
+    // Calculate world coordinates of the lock point using X-Plane coordinate system
+    // X-Plane: X=East, Y=Up, Z=North (opposite of typical)
+    float horizontalDistance = distance * cos(tiltRad);
+    gLockedWorldX = planeX + horizontalDistance * sin(headingRad);  // East
+    gLockedWorldY = planeY + distance * sin(tiltRad);               // Up
+    gLockedWorldZ = planeZ + horizontalDistance * cos(headingRad);  // North
     
     // Store the camera angles at lock time
     gLockOnPan = currentPan;
@@ -110,6 +112,7 @@ void UpdateCameraToLockPoint(float* outPan, float* outTilt)
     }
     
     // Calculate absolute heading to target (in world coordinates)
+    // X-Plane coordinate system: atan2(East, North)
     float targetHeading = atan2(dx, dz) * 180.0f / M_PI;
     
     // Calculate tilt angle to target

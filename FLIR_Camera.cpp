@@ -486,7 +486,7 @@ static void DrawRealisticThermalOverlay(void)
     if (IsLockOnActive()) {
         glColor4f(1.0f, 0.0f, 0.0f, 0.9f); // Red when locked
     } else {
-        glColor4f(0.0f, 1.0f, 0.0f, 0.9f); // Green when scanning
+        glColor4f(0.0f, 1.0f, 0.0f, 0.9f); // Bright green when scanning
     }
     
     glLineWidth(2.0f);
