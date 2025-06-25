@@ -1,15 +1,18 @@
 -- FLIR Camera HUD Display Script for FlyWithLua
 -- Place this file in X-Plane/Resources/plugins/FlyWithLua/Scripts/
--- Simple and safe version
+-- Only shows HUD when FLIR camera is actually active
 
 -- Global variables
 flir_start_time = flir_start_time or os.time()
 
 function draw_flir_hud()
-    -- Only draw when in external view (likely FLIR active)
+    -- Check if FLIR camera is active via shared dataref
+    local flir_active = dataref_table("sim/operation/prefs/misc/manipulator_disabled")
+    
+    -- Only draw HUD when FLIR camera is actually active (manipulator disabled indicates camera mode)
     local view_type = dataref_table("sim/graphics/view/view_type")
     
-    if view_type[0] == 1026 then  -- External view
+    if view_type[0] == 1026 and flir_active[0] == 1 then  -- External view AND camera active
         -- Get basic aircraft data safely
         local zulu_time = dataref_table("sim/time/zulu_time_sec")[0]
         local latitude = dataref_table("sim/flightmodel/position/latitude")[0]

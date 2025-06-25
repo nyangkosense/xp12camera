@@ -29,7 +29,7 @@ LDFLAGS += $(LIBS)
 LDFLAGS += -lopengl32 -lgdi32
 
 # Source files
-SOURCES = FLIR_Camera.cpp
+SOURCES = FLIR_Camera.cpp FLIR_LockOn.cpp
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
