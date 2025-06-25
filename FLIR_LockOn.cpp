@@ -2,11 +2,12 @@
  * FLIR_LockOn.cpp
  * 
  * Real-world lock-on system for FLIR camera
- * Implements proper target acquisition and tracking like military systems
+ * Implements proper world-space target tracking using X-Plane's coordinate system
  */
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -14,13 +15,14 @@
 
 #include "XPLMDataAccess.h"
 #include "XPLMUtilities.h"
+#include "XPLMGraphics.h"
 #include "FLIR_LockOn.h"
 
-// Lock-on state
+// Lock-on state - using OpenGL local coordinates for precision
 static int gLockOnActive = 0;
-static float gTargetBearing = 0.0f;    // Absolute bearing to target (degrees)
-static float gTargetElevation = 0.0f;  // Elevation angle to target (degrees)
-static float gTargetRange = 0.0f;      // Range to target (meters)
+static double gTargetX = 0.0;          // Target X in OpenGL coordinates (East)
+static double gTargetY = 0.0;          // Target Y in OpenGL coordinates (Up)  
+static double gTargetZ = 0.0;          // Target Z in OpenGL coordinates (South)
 static float gLockAcquisitionTime = 0.0f; // Time when lock was acquired
 
 // Aircraft position datarefs
@@ -51,63 +53,95 @@ void SetArbitraryLockPoint(float currentPan, float currentTilt, float distance)
         return;
     }
     
-    // Get current aircraft position and heading
+    // Get current aircraft position in OpenGL coordinates
+    double planeX = XPLMGetDataf(gPlaneX);
+    double planeY = XPLMGetDataf(gPlaneY);
+    double planeZ = XPLMGetDataf(gPlaneZ);
     float planeHeading = XPLMGetDataf(gPlaneHeading);
     
-    // Calculate absolute target bearing and elevation
-    // Real-world systems store bearing/elevation relative to magnetic north
-    gTargetBearing = planeHeading + currentPan;
-    gTargetElevation = currentTilt;
-    gTargetRange = distance;
+    // Calculate camera position (belly-mounted, slightly forward)
+    float headingRad = planeHeading * M_PI / 180.0f;
+    double cameraX = planeX + 3.0 * sin(headingRad);  // 3m forward
+    double cameraY = planeY - 5.0;                    // 5m below
+    double cameraZ = planeZ + 3.0 * cos(headingRad);  // Note: Z+ is south
+    
+    // Calculate absolute camera direction
+    float absoluteHeading = planeHeading + currentPan;
+    float headingRadAbs = absoluteHeading * M_PI / 180.0f;
+    float pitchRad = currentTilt * M_PI / 180.0f;
+    
+    // Calculate target point in OpenGL coordinates
+    // X-Plane: X=East, Y=Up, Z=South, camera starts facing -Z (north)
+    double horizontalDistance = distance * cos(pitchRad);
+    gTargetX = cameraX + horizontalDistance * sin(headingRadAbs);    // East component
+    gTargetY = cameraY + distance * sin(pitchRad);                   // Altitude component  
+    gTargetZ = cameraZ - horizontalDistance * cos(headingRadAbs);    // South component (note minus for north)
+    
     gLockAcquisitionTime = XPLMGetDataf(XPLMFindDataRef("sim/time/total_running_time_sec"));
-    
-    // Normalize bearing to 0-360 degrees
-    while (gTargetBearing >= 360.0f) gTargetBearing -= 360.0f;
-    while (gTargetBearing < 0.0f) gTargetBearing += 360.0f;
-    
     gLockOnActive = 1;
     
     char msg[256];
-    sprintf(msg, "FLIR Lock-On: Target acquired - Bearing %.1f°, Elevation %.1f°, Range %.0fm\n", 
-            gTargetBearing, gTargetElevation, gTargetRange);
+    sprintf(msg, "FLIR Lock-On: Target acquired at OpenGL coords (%.1f, %.1f, %.1f)\n", 
+            gTargetX, gTargetY, gTargetZ);
     XPLMDebugString(msg);
 }
 
 void UpdateCameraToLockPoint(float* outPan, float* outTilt)
 {
-    if (!gLockOnActive || !gPlaneHeading) {
+    if (!gLockOnActive || !gPlaneX || !gPlaneY || !gPlaneZ || !gPlaneHeading) {
         return;
     }
     
-    // Get current aircraft heading
-    float currentHeading = XPLMGetDataf(gPlaneHeading);
+    // Get current aircraft position and heading
+    double planeX = XPLMGetDataf(gPlaneX);
+    double planeY = XPLMGetDataf(gPlaneY);
+    double planeZ = XPLMGetDataf(gPlaneZ);
+    float planeHeading = XPLMGetDataf(gPlaneHeading);
     
-    // Calculate required camera pan to maintain lock on target bearing
-    // Pan = Target Bearing - Aircraft Heading
-    *outPan = gTargetBearing - currentHeading;
+    // Calculate current camera position (same as in SetArbitraryLockPoint)
+    float headingRad = planeHeading * M_PI / 180.0f;
+    double cameraX = planeX + 3.0 * sin(headingRad);  // 3m forward
+    double cameraY = planeY - 5.0;                    // 5m below  
+    double cameraZ = planeZ + 3.0 * cos(headingRad);  // Note: Z+ is south
     
-    // Normalize pan angle to -180 to +180 degrees for natural camera movement
+    // Calculate vector from camera to target
+    double dx = gTargetX - cameraX;  // East component
+    double dy = gTargetY - cameraY;  // Up component
+    double dz = gTargetZ - cameraZ;  // South component
+    
+    // Calculate distance to target
+    double horizontalDist = sqrt(dx * dx + dz * dz);
+    double totalDist = sqrt(dx * dx + dy * dy + dz * dz);
+    
+    if (totalDist < 1.0) {
+        // Target too close, maintain current angles
+        return;
+    }
+    
+    // Convert vector to spherical coordinates
+    // X-Plane: Camera faces -Z initially (north), X=East, Z=South
+    float targetHeading = atan2(dx, -dz) * 180.0f / M_PI;  // Note: -dz for north=0°
+    float targetPitch = atan2(dy, horizontalDist) * 180.0f / M_PI;
+    
+    // Convert absolute heading to relative camera pan
+    *outPan = targetHeading - planeHeading;
+    *outTilt = targetPitch;
+    
+    // Normalize pan angle to -180 to +180 degrees
     while (*outPan > 180.0f) *outPan -= 360.0f;
     while (*outPan < -180.0f) *outPan += 360.0f;
     
-    // Elevation stays constant (target doesn't move up/down)
-    *outTilt = gTargetElevation;
-    
-    // Clamp to camera physical limits
+    // Clamp to camera physical limits  
     if (*outPan > 180.0f) *outPan = 180.0f;
     if (*outPan < -180.0f) *outPan = -180.0f;
     if (*outTilt > 45.0f) *outTilt = 45.0f;
     if (*outTilt < -90.0f) *outTilt = -90.0f;
     
-    // Optional: Add slight tracking drift for realism
-    float currentTime = XPLMGetDataf(XPLMFindDataRef("sim/time/total_running_time_sec"));
-    float lockDuration = currentTime - gLockAcquisitionTime;
-    
-    // Small drift after 30 seconds (realistic for long-range tracking)
-    if (lockDuration > 30.0f) {
-        float drift = (lockDuration - 30.0f) * 0.01f; // 0.01 degrees per second
-        *outPan += drift * sin(currentTime * 0.1f); // Small oscillation
-    }
+    // Debug output for testing
+    char debugMsg[256];
+    sprintf(debugMsg, "FLIR Track: Dist=%.1fm, TargetHdg=%.1f°, Pan=%.1f°, Pitch=%.1f°\n", 
+            totalDist, targetHeading, *outPan, *outTilt);
+    XPLMDebugString(debugMsg);
 }
 
 void DisableLockOn()
@@ -129,7 +163,28 @@ void GetLockOnStatus(char* statusBuffer, int bufferSize)
         return;
     }
     
-    snprintf(statusBuffer, bufferSize, "LOCK: BRG %.0f° EL %.0f° RNG %.0fm", 
-             gTargetBearing, gTargetElevation, gTargetRange);
+    // Calculate current distance to target
+    if (gPlaneX && gPlaneY && gPlaneZ) {
+        double planeX = XPLMGetDataf(gPlaneX);
+        double planeY = XPLMGetDataf(gPlaneY);
+        double planeZ = XPLMGetDataf(gPlaneZ);
+        
+        // Calculate camera position
+        float planeHeading = XPLMGetDataf(gPlaneHeading);
+        float headingRad = planeHeading * M_PI / 180.0f;
+        double cameraX = planeX + 3.0 * sin(headingRad);
+        double cameraY = planeY - 5.0;
+        double cameraZ = planeZ + 3.0 * cos(headingRad);
+        
+        // Calculate distance to target
+        double dx = gTargetX - cameraX;
+        double dy = gTargetY - cameraY;
+        double dz = gTargetZ - cameraZ;
+        double distance = sqrt(dx * dx + dy * dy + dz * dz);
+        
+        snprintf(statusBuffer, bufferSize, "LOCK: ON  RNG %.0fm", distance);
+    } else {
+        strncpy(statusBuffer, "LOCK: ON", bufferSize - 1);
+    }
     statusBuffer[bufferSize - 1] = '\0';
 }
