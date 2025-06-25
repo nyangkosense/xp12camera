@@ -532,41 +532,44 @@ static float GetDistanceToCamera(float x, float y, float z);
      }
      
      glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
-     glLineWidth(5.0f); // Make lines thicker to be more visible
+     glLineWidth(3.0f);
  
      glBegin(GL_LINES);
-     // Crosshair - make it bigger and more visible
-     glVertex2f(centerX - 50, centerY);
-     glVertex2f(centerX + 50, centerY);
-     glVertex2f(centerX, centerY - 50);
-     glVertex2f(centerX, centerY + 50);
+     // No crosshair - only brackets
      
-     // Targeting brackets
-     float bracketSize = 60.0f / gZoomLevel;
+     // Military-style targeting brackets [ ] - FIXED SIZE
+     float bracketSize = 50.0f;  // Fixed size - doesn't change with zoom
+     float bracketLength = 20.0f;
      
-     // Top-left bracket
+     // Top-left bracket [
      glVertex2f(centerX - bracketSize, centerY + bracketSize);
-     glVertex2f(centerX - bracketSize + 20, centerY + bracketSize);
+     glVertex2f(centerX - bracketSize + bracketLength, centerY + bracketSize);
      glVertex2f(centerX - bracketSize, centerY + bracketSize);
-     glVertex2f(centerX - bracketSize, centerY + bracketSize - 20);
+     glVertex2f(centerX - bracketSize, centerY + bracketSize - bracketLength);
      
-     // Top-right bracket
+     // Top-right bracket ]
      glVertex2f(centerX + bracketSize, centerY + bracketSize);
-     glVertex2f(centerX + bracketSize - 20, centerY + bracketSize);
+     glVertex2f(centerX + bracketSize - bracketLength, centerY + bracketSize);
      glVertex2f(centerX + bracketSize, centerY + bracketSize);
-     glVertex2f(centerX + bracketSize, centerY + bracketSize - 20);
+     glVertex2f(centerX + bracketSize, centerY + bracketSize - bracketLength);
      
-     // Bottom-left bracket
+     // Bottom-left bracket [
      glVertex2f(centerX - bracketSize, centerY - bracketSize);
-     glVertex2f(centerX - bracketSize + 20, centerY - bracketSize);
+     glVertex2f(centerX - bracketSize + bracketLength, centerY - bracketSize);
      glVertex2f(centerX - bracketSize, centerY - bracketSize);
-     glVertex2f(centerX - bracketSize, centerY - bracketSize + 20);
+     glVertex2f(centerX - bracketSize, centerY - bracketSize + bracketLength);
      
-     // Bottom-right bracket
+     // Bottom-right bracket ]
      glVertex2f(centerX + bracketSize, centerY - bracketSize);
-     glVertex2f(centerX + bracketSize - 20, centerY - bracketSize);
+     glVertex2f(centerX + bracketSize - bracketLength, centerY - bracketSize);
      glVertex2f(centerX + bracketSize, centerY - bracketSize);
-     glVertex2f(centerX + bracketSize, centerY - bracketSize + 20);
+     glVertex2f(centerX + bracketSize, centerY - bracketSize + bracketLength);
+     
+     // Small center dot for precise aiming
+     glVertex2f(centerX - 2, centerY);
+     glVertex2f(centerX + 2, centerY);
+     glVertex2f(centerX, centerY - 2);
+     glVertex2f(centerX, centerY + 2);
      glEnd();
  
      // Draw thermal effects based on thermal mode - using same reliable approach as crosshair
@@ -660,63 +663,76 @@ static float GetDistanceToCamera(float x, float y, float z);
      glVertex2f(30 + zoomBar, 40);
      glEnd();
      
-     // Target lock indicator (minimal and professional)
+     // TARGET LOCK INDICATOR - VERY VISIBLE
      if (gTargetLocked) {
-         glColor4f(1.0f, 0.0f, 0.0f, 0.9f); // Red for locked
-         glLineWidth(2.0f);
+         glColor4f(1.0f, 0.0f, 0.0f, 1.0f); // Bright red for locked
+         glLineWidth(4.0f);
          
-         // Simple lock indicator box around center crosshair
+         // Large red box around the entire targeting area
          glBegin(GL_LINE_LOOP);
-         glVertex2f(centerX - 80, centerY - 80);
-         glVertex2f(centerX + 80, centerY - 80);
-         glVertex2f(centerX + 80, centerY + 80);
-         glVertex2f(centerX - 80, centerY + 80);
+         glVertex2f(centerX - 100, centerY - 100);
+         glVertex2f(centerX + 100, centerY - 100);
+         glVertex2f(centerX + 100, centerY + 100);
+         glVertex2f(centerX - 100, centerY + 100);
          glEnd();
          
-         // Lock indicator corners
+         // Flashing corner indicators
+         float time = XPLMGetElapsedTime();
+         float flash = (sinf(time * 4.0f) + 1.0f) * 0.5f; // 0-1 flashing
+         glColor4f(1.0f, 0.0f, 0.0f, 0.5f + flash * 0.5f);
+         
          glBegin(GL_LINES);
-         // Corner brackets
-         float lockSize = 20.0f;
-         // Top-left
-         glVertex2f(centerX - 80, centerY + 80 - lockSize); glVertex2f(centerX - 80, centerY + 80);
-         glVertex2f(centerX - 80, centerY + 80); glVertex2f(centerX - 80 + lockSize, centerY + 80);
-         // Top-right
-         glVertex2f(centerX + 80 - lockSize, centerY + 80); glVertex2f(centerX + 80, centerY + 80);
-         glVertex2f(centerX + 80, centerY + 80); glVertex2f(centerX + 80, centerY + 80 - lockSize);
-         // Bottom-left
-         glVertex2f(centerX - 80, centerY - 80 + lockSize); glVertex2f(centerX - 80, centerY - 80);
-         glVertex2f(centerX - 80, centerY - 80); glVertex2f(centerX - 80 + lockSize, centerY - 80);
-         // Bottom-right
-         glVertex2f(centerX + 80 - lockSize, centerY - 80); glVertex2f(centerX + 80, centerY - 80);
-         glVertex2f(centerX + 80, centerY - 80); glVertex2f(centerX + 80, centerY - 80 + lockSize);
+         float lockSize = 30.0f;
+         // Top-left corner
+         glVertex2f(centerX - 100, centerY + 100 - lockSize); glVertex2f(centerX - 100, centerY + 100);
+         glVertex2f(centerX - 100, centerY + 100); glVertex2f(centerX - 100 + lockSize, centerY + 100);
+         // Top-right corner
+         glVertex2f(centerX + 100 - lockSize, centerY + 100); glVertex2f(centerX + 100, centerY + 100);
+         glVertex2f(centerX + 100, centerY + 100); glVertex2f(centerX + 100, centerY + 100 - lockSize);
+         // Bottom-left corner
+         glVertex2f(centerX - 100, centerY - 100 + lockSize); glVertex2f(centerX - 100, centerY - 100);
+         glVertex2f(centerX - 100, centerY - 100); glVertex2f(centerX - 100 + lockSize, centerY - 100);
+         // Bottom-right corner
+         glVertex2f(centerX + 100 - lockSize, centerY - 100); glVertex2f(centerX + 100, centerY - 100);
+         glVertex2f(centerX + 100, centerY - 100); glVertex2f(centerX + 100, centerY - 100 + lockSize);
          glEnd();
          
-         // Distance readout (bottom of lock box)
-         if (gFocusDistance > 0) {
-             // Simple distance indicator bar
-             float distBar = fminf(gFocusDistance / 50.0f, 60.0f); // Scale distance to bar length
-             glBegin(GL_LINES);
-             glVertex2f(centerX - 30, centerY - 100);
-             glVertex2f(centerX - 30 + distBar, centerY - 100);
-             glEnd();
-         }
+         // LOCKED text indicator (top of screen)
+         glColor4f(1.0f, 0.0f, 0.0f, 1.0f);
+         glLineWidth(3.0f);
+         glBegin(GL_LINES);
+         // Simple "LOCKED" text using lines at top center
+         float textY = screenHeight - 100;
+         // L
+         glVertex2f(centerX - 80, textY); glVertex2f(centerX - 80, textY - 20);
+         glVertex2f(centerX - 80, textY - 20); glVertex2f(centerX - 65, textY - 20);
+         // O
+         glVertex2f(centerX - 60, textY); glVertex2f(centerX - 45, textY);
+         glVertex2f(centerX - 60, textY - 20); glVertex2f(centerX - 45, textY - 20);
+         glVertex2f(centerX - 60, textY); glVertex2f(centerX - 60, textY - 20);
+         glVertex2f(centerX - 45, textY); glVertex2f(centerX - 45, textY - 20);
+         // C
+         glVertex2f(centerX - 40, textY); glVertex2f(centerX - 25, textY);
+         glVertex2f(centerX - 40, textY - 20); glVertex2f(centerX - 25, textY - 20);
+         glVertex2f(centerX - 40, textY); glVertex2f(centerX - 40, textY - 20);
+         // K
+         glVertex2f(centerX - 20, textY); glVertex2f(centerX - 20, textY - 20);
+         glVertex2f(centerX - 20, textY - 10); glVertex2f(centerX - 5, textY);
+         glVertex2f(centerX - 20, textY - 10); glVertex2f(centerX - 5, textY - 20);
+         // E
+         glVertex2f(centerX, textY); glVertex2f(centerX, textY - 20);
+         glVertex2f(centerX, textY); glVertex2f(centerX + 15, textY);
+         glVertex2f(centerX, textY - 10); glVertex2f(centerX + 10, textY - 10);
+         glVertex2f(centerX, textY - 20); glVertex2f(centerX + 15, textY - 20);
+         // D
+         glVertex2f(centerX + 20, textY); glVertex2f(centerX + 20, textY - 20);
+         glVertex2f(centerX + 20, textY); glVertex2f(centerX + 30, textY - 5);
+         glVertex2f(centerX + 30, textY - 5); glVertex2f(centerX + 30, textY - 15);
+         glVertex2f(centerX + 30, textY - 15); glVertex2f(centerX + 20, textY - 20);
+         glEnd();
      }
      
-     // Range circles around center
-     glColor4f(0.0f, 1.0f, 0.0f, 0.3f);
-     glLineWidth(1.0f);
-     for (int i = 1; i <= 3; i++) {
-         float radius = 80.0f * i / gZoomLevel;
-         if (radius < screenWidth / 4) {
-             glBegin(GL_LINE_LOOP);
-             for (int angle = 0; angle < 360; angle += 10) {
-                 float x = centerX + radius * cosf(angle * M_PI / 180.0f);
-                 float y = centerY + radius * sinf(angle * M_PI / 180.0f);
-                 glVertex2f(x, y);
-             }
-             glEnd();
-         }
-     }
+     // No range circles - clean display
      
      // Heading indicator (top center)
      glColor4f(0.0f, 1.0f, 0.0f, 0.9f);
