@@ -54,6 +54,7 @@ static XPLMHotKeyID gThermalToggleKey = NULL;
  
  // FLIR camera state
  static int gCameraActive = 0;
+static int gDrawCallbackRegistered = 0;
  static float gZoomLevel = 1.0f;
  static float gCameraPan = 0.0f;      // Left/right rotation (degrees)
  static float gCameraTilt = -15.0f;   // Up/down rotation (degrees)
@@ -195,13 +196,9 @@ static float GetDistanceToCamera(float x, float y, float z);
                                        TiltDownCallback, NULL);
  
      // Register thermal overlay drawing callback - use objects phase for better integration
-     int registerResult = XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Modern3D, 1, NULL);
-    if (registerResult) {
-        XPLMDebugString("FLIR Camera System: Drawing callback registered successfully\n");
-    } else {
-        XPLMDebugString("FLIR Camera System: Failed to register drawing callback, trying Panel phase\n");
-        XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Panel, 0, NULL);
-    }
+     // Register 2D drawing callback for overlay - per SDK guidance for overlays/annotations  
+    // Only register when camera is active to minimize performance overhead
+    // Drawing callback will be registered dynamically when camera is activated
  
      XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
      XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
@@ -252,13 +249,27 @@ static float GetDistanceToCamera(float x, float y, float z);
          // Take camera control
          XPLMControlCamera(xplm_ControlCameraUntilViewChanges, FLIRCameraFunc, NULL);
          gCameraActive = 1;
+        
+        // Register 2D drawing callback for overlays (per SDK guidance)
+        if (!gDrawCallbackRegistered) {
+            XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
+            gDrawCallbackRegistered = 1;
+            XPLMDebugString("FLIR Camera System: 2D overlay callback registered\n");
+        }
          
          XPLMDebugString("FLIR Camera System: Camera active - mounted under aircraft\n");
      } else {
          // Deactivate camera
          XPLMDontControlCamera();
          gCameraActive = 0;
-         XPLMDebugString("FLIR Camera System: Camera deactivated\n");
+         // Unregister drawing callback to save performance
+        if (gDrawCallbackRegistered) {
+            XPLMUnregisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
+            gDrawCallbackRegistered = 0;
+            XPLMDebugString("FLIR Camera System: 2D overlay callback unregistered\n");
+        }
+        
+        XPLMDebugString("FLIR Camera System: Camera deactivated\n");
      }
  }
  
@@ -420,31 +431,16 @@ static float GetDistanceToCamera(float x, float y, float z);
     DetectAircraft();
  
      // Set up OpenGL for 2D drawing
-     glPushAttrib(GL_ALL_ATTRIB_BITS);
+     // Get screen dimensions
+    int screenWidth, screenHeight;
+    XPLMGetScreenSize(&screenWidth, &screenHeight);
+    
+    // For Window phase, X-Plane already sets up proper 2D coordinates
      XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0);
      
-     // Set up 2D projection
-     glMatrixMode(GL_PROJECTION);
-     glPushMatrix();
-     glLoadIdentity();
-     // glOrtho will be set after getting screen dimensions
-     
-     glMatrixMode(GL_MODELVIEW);
-     glPushMatrix();
-     glLoadIdentity();
-     
-     // Disable depth testing for 2D overlay
-     glDisable(GL_DEPTH_TEST);
+     // Window phase provides proper 2D setup - no manual matrix setup needed
  
-     // Get screen dimensions
-     int screenWidth, screenHeight;
-     XPLMGetScreenSize(&screenWidth, &screenHeight);
-     
-     // Now set up the orthographic projection with actual screen dimensions
-     glMatrixMode(GL_PROJECTION);
-     glLoadIdentity();
-     glOrtho(0, screenWidth, 0, screenHeight, -1, 1);
-     glMatrixMode(GL_MODELVIEW);
+     // For Window phase, coordinate system is already set up by X-Plane
  
      float centerX = screenWidth / 2.0f;
      float centerY = screenHeight / 2.0f;
@@ -565,11 +561,7 @@ static float GetDistanceToCamera(float x, float y, float z);
      // Position text in corners (actual text rendering would need XPLMDrawString)
      // This is just showing where the text would go
      
-     // Restore OpenGL state
-     glPopMatrix();
-     glMatrixMode(GL_PROJECTION);
-     glPopMatrix();
-     glPopAttrib();
+     // OpenGL state managed by X-Plane for Window phase
      
      return 1;
  }
