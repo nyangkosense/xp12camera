@@ -497,7 +497,13 @@ static float GetDistanceToCamera(float x, float y, float z);
          
          if (gThermalMode == 1) {
              // White Hot mode - dark background with bright heat sources
-             glColor4f(0.0f, 0.0f, 0.1f, 0.7f);
+             if (callCount < 3) {
+            char debugMsg[256];
+            sprintf(debugMsg, "FLIR: Drawing thermal mode %d\n", gThermalMode);
+            XPLMDebugString(debugMsg);
+        }
+        
+        glColor4f(0.0f, 0.0f, 0.1f, 0.4f); // Make less opaque for testing
              glBegin(GL_QUADS);
              glVertex2f(0, 0);
              glVertex2f(screenWidth, 0);
@@ -506,7 +512,7 @@ static float GetDistanceToCamera(float x, float y, float z);
              glEnd();
          } else if (gThermalMode == 2) {
              // Enhanced mode - blue tint with enhanced contrast
-             glColor4f(0.1f, 0.3f, 0.6f, 0.5f);
+             glColor4f(0.1f, 0.3f, 0.6f, 0.3f); // Make less opaque for testing
              glBegin(GL_QUADS);
              glVertex2f(0, 0);
              glVertex2f(screenWidth, 0);
@@ -516,7 +522,33 @@ static float GetDistanceToCamera(float x, float y, float z);
          }
          
          // Draw realistic heat sources based on actual detected objects
-         DrawRealisticThermalOverlay();
+         // Draw some simple test heat sources first to verify basic thermal rendering
+        for (int i = 0; i < 4; i++) {
+            float x = (i + 1) * screenWidth / 5.0f;
+            float y = screenHeight / 2.0f;
+            
+            float size = 30.0f;
+            
+            if (gThermalMode == 1) {
+                // White hot - bright white
+                glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
+            } else {
+                // Enhanced mode - bright orange
+                glColor4f(1.0f, 0.8f, 0.0f, 0.9f);
+            }
+            
+            glBegin(GL_QUADS);
+            glVertex2f(x - size/2, y - size/2);
+            glVertex2f(x + size/2, y - size/2);
+            glVertex2f(x + size/2, y + size/2);
+            glVertex2f(x - size/2, y + size/2);
+            glEnd();
+        }
+        
+        // Draw realistic heat sources if we have any
+        if (gHeatSourceCount > 0) {
+            DrawRealisticThermalOverlay();
+        }
          
          // Also draw some simulated background thermal noise
          float time = XPLMGetElapsedTime();
