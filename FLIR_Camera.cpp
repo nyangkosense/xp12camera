@@ -297,7 +297,20 @@ static float GetDistanceToCamera(float x, float y, float z);
  static void ZoomInCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gZoomLevel = fminf(gZoomLevel * 1.5f, 16.0f);
+         // More precise zoom steps: 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0
+        if (gZoomLevel < 1.5f) gZoomLevel = 1.5f;
+        else if (gZoomLevel < 2.0f) gZoomLevel = 2.0f;
+        else if (gZoomLevel < 3.0f) gZoomLevel = 3.0f;
+        else if (gZoomLevel < 4.0f) gZoomLevel = 4.0f;
+        else if (gZoomLevel < 6.0f) gZoomLevel = 6.0f;
+        else if (gZoomLevel < 8.0f) gZoomLevel = 8.0f;
+        else if (gZoomLevel < 12.0f) gZoomLevel = 12.0f;
+        else if (gZoomLevel < 16.0f) gZoomLevel = 16.0f;
+        else if (gZoomLevel < 24.0f) gZoomLevel = 24.0f;
+        else if (gZoomLevel < 32.0f) gZoomLevel = 32.0f;
+        else if (gZoomLevel < 48.0f) gZoomLevel = 48.0f;
+        else if (gZoomLevel < 64.0f) gZoomLevel = 64.0f;
+        else gZoomLevel = 64.0f; // Maximum zoom
          char msg[256];
          sprintf(msg, "FLIR Camera System: Zoom %.1fx\n", gZoomLevel);
          XPLMDebugString(msg);
@@ -307,7 +320,19 @@ static float GetDistanceToCamera(float x, float y, float z);
  static void ZoomOutCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gZoomLevel = fmaxf(gZoomLevel / 1.5f, 1.0f);
+         // Reverse zoom steps
+        if (gZoomLevel > 48.0f) gZoomLevel = 48.0f;
+        else if (gZoomLevel > 32.0f) gZoomLevel = 32.0f;
+        else if (gZoomLevel > 24.0f) gZoomLevel = 24.0f;
+        else if (gZoomLevel > 16.0f) gZoomLevel = 16.0f;
+        else if (gZoomLevel > 12.0f) gZoomLevel = 12.0f;
+        else if (gZoomLevel > 8.0f) gZoomLevel = 8.0f;
+        else if (gZoomLevel > 6.0f) gZoomLevel = 6.0f;
+        else if (gZoomLevel > 4.0f) gZoomLevel = 4.0f;
+        else if (gZoomLevel > 3.0f) gZoomLevel = 3.0f;
+        else if (gZoomLevel > 2.0f) gZoomLevel = 2.0f;
+        else if (gZoomLevel > 1.5f) gZoomLevel = 1.5f;
+        else gZoomLevel = 1.0f; // Minimum zoom
          char msg[256];
          sprintf(msg, "FLIR Camera System: Zoom %.1fx\n", gZoomLevel);
          XPLMDebugString(msg);
@@ -453,13 +478,20 @@ static float GetDistanceToCamera(float x, float y, float z);
     UpdateHeatSources();
     DetectAircraft();
  
-     // Set up OpenGL for 2D drawing
+     // Set up OpenGL for 2D drawing with proper error checking
      // Get screen dimensions
     int screenWidth, screenHeight;
     XPLMGetScreenSize(&screenWidth, &screenHeight);
     
-    // For Window phase, X-Plane already sets up proper 2D coordinates
-     XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0);
+    if (screenWidth <= 0 || screenHeight <= 0) {
+        return 1; // Avoid drawing with invalid screen dimensions
+    }
+    
+    // Save OpenGL state to prevent crashes
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    
+    // Set up 2D rendering state
+    XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0);
      
      // Window phase provides proper 2D setup - no manual matrix setup needed
  
@@ -651,25 +683,44 @@ static float GetDistanceToCamera(float x, float y, float z);
      // Use X-Plane's text rendering for professional look
      glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
      
-     // Top status line with actual data (using XPLMDrawString for real text)
-     char statusLine[256];
-     sprintf(statusLine, "FLIR  %02d:%02d UTC  LAT:%.4f LON:%.4f  ALT:%dft  ZOOM:%.1fx", 
-             hours, minutes, latitude, longitude, (int)(altitude * 3.28084f), gZoomLevel);
+     // Status display using simple line graphics (safer than XPLMDrawString in drawing callback)
+     // Top status indicators - using geometric shapes instead of text to avoid crashes
      
-     // Draw the status line using X-Plane's text rendering
-     glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
-     XPLMDrawString(NULL, 30, screenHeight - 30, statusLine, NULL, xplmFont_Proportional);
+     // UTC time indicator (top-left corner)
+     glLineWidth(2.0f);
+     glBegin(GL_LINES);
+     // Simple time display as bars
+     for (int i = 0; i < 4; i++) {
+         int value = (i < 2) ? hours : minutes;
+         int digit = (i % 2 == 0) ? value / 10 : value % 10;
+         float x = 40 + i * 20;
+         float height = 5 + digit * 2; // Height represents digit value
+         glVertex2f(x, screenHeight - 25);
+         glVertex2f(x, screenHeight - 25 + height);
+     }
+     glEnd();
      
-     // Thermal mode indicator
-     char thermalMode[64];
-     const char* modeNames[] = {"OFF", "WHT", "ENH"};
-     sprintf(thermalMode, "THERMAL: %s", modeNames[gThermalMode]);
-     XPLMDrawString(NULL, 30, screenHeight - 50, thermalMode, NULL, xplmFont_Proportional);
+     // Zoom level display (top-right corner) 
+     glBegin(GL_LINES);
+     float zoomIndicator = gZoomLevel * 10.0f;
+     glVertex2f(screenWidth - 100, screenHeight - 25);
+     glVertex2f(screenWidth - 100 + zoomIndicator, screenHeight - 25);
+     glVertex2f(screenWidth - 100, screenHeight - 30);
+     glVertex2f(screenWidth - 100 + zoomIndicator, screenHeight - 30);
+     glEnd();
      
-     // Camera orientation display
-     char cameraInfo[128];
-     sprintf(cameraInfo, "PAN:%.1f  TILT:%.1f", gCameraPan, gCameraTilt);
-     XPLMDrawString(NULL, 30, screenHeight - 70, cameraInfo, NULL, xplmFont_Proportional);
+     // Thermal mode indicator (simple colored bar)
+     if (gThermalMode > 0) {
+         glLineWidth(4.0f);
+         if (gThermalMode == 1) glColor4f(1.0f, 1.0f, 1.0f, 0.8f); // White for White Hot
+         else glColor4f(0.0f, 1.0f, 0.0f, 0.8f); // Green for Enhanced
+         
+         glBegin(GL_LINES);
+         glVertex2f(30, screenHeight - 45);
+         glVertex2f(80, screenHeight - 45);
+         glEnd();
+         glColor4f(0.0f, 1.0f, 0.0f, 0.8f); // Reset to green
+     }
      
      // Zoom level indicator (bottom-left, simple and clean)
      glLineWidth(2.0f);
@@ -784,7 +835,8 @@ static float GetDistanceToCamera(float x, float y, float z);
      glVertex2f(headingX, headingY + 10);
      glEnd();
      
-     // OpenGL state managed by X-Plane for Window phase
+     // Restore OpenGL state to prevent crashes
+     glPopAttrib();
      
      return 1;
  }
