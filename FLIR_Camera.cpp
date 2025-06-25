@@ -37,6 +37,7 @@
  static XPLMHotKeyID gPanRightKey = NULL;
  static XPLMHotKeyID gTiltUpKey = NULL;
  static XPLMHotKeyID gTiltDownKey = NULL;
+static XPLMHotKeyID gThermalToggleKey = NULL;
  
  // Aircraft position datarefs
  static XPLMDataRef gPlaneX = NULL;
@@ -53,6 +54,9 @@
  static float gCameraTilt = -15.0f;   // Up/down rotation (degrees)
  static float gCameraHeight = -5.0f;  // Height below aircraft (meters)
  static float gCameraDistance = 3.0f; // Forward/back from aircraft center
+
+// Thermal view settings
+static int gThermalMode = 1;         // 0=Off, 1=White Hot, 2=Enhanced
  
  // Target tracking
  static int gTargetLocked = 0;
@@ -68,6 +72,7 @@
  static void PanRightCallback(void* inRefcon);
  static void TiltUpCallback(void* inRefcon);
  static void TiltDownCallback(void* inRefcon);
+static void ThermalToggleCallback(void* inRefcon);
  
  static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, 
                            int inIsLosingControl, 
@@ -126,7 +131,11 @@
  
      XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
      XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
-     XPLMDebugString("FLIR Camera System: Use +/- for zoom, arrows for pan/tilt\n");
+     XPLMDebugString("FLIR Camera System: Use +/- for zoom, arrows for pan/tilt, T for thermal\n");
+     
+     gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag,
+                                           "FLIR Thermal Toggle",
+                                           ThermalToggleCallback, NULL);
  
      return 1;
  }
@@ -237,6 +246,17 @@
          gCameraTilt = fmaxf(gCameraTilt - 10.0f, -90.0f);
          char msg[256];
          sprintf(msg, "FLIR Camera System: Tilt %.0f degrees\n", gCameraTilt);
+         XPLMDebugString(msg);
+     }
+ }
+ 
+ static void ThermalToggleCallback(void* inRefcon)
+ {
+     if (gCameraActive) {
+         gThermalMode = (gThermalMode + 1) % 3;
+         char msg[256];
+         const char* modeNames[] = {"Off", "White Hot", "Enhanced"};
+         sprintf(msg, "FLIR Camera System: Thermal mode %s\n", modeNames[gThermalMode]);
          XPLMDebugString(msg);
      }
  }
@@ -362,21 +382,59 @@
      glVertex2f(centerX + bracketSize, centerY - bracketSize + 20);
      glEnd();
  
-     // Draw thermal effects
-     if (gZoomLevel > 2.0f) {
-         // At higher zoom, show simulated thermal signatures
-         glColor4f(1.0f, 0.8f, 0.6f, 0.7f);
+     // Draw thermal effects based on thermal mode
+     if (gThermalMode > 0) {
+         glEnable(GL_BLEND);
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
          
-         // Simulate heat source (could be enhanced to detect actual objects)
-         float heatX = centerX + sinf(XPLMGetElapsedTime()) * 50;
-         float heatY = centerY + cosf(XPLMGetElapsedTime() * 1.3f) * 30;
+         if (gThermalMode == 1) {
+             // White Hot mode - dark background with bright heat sources
+             glColor4f(0.1f, 0.1f, 0.2f, 0.3f);
+             glBegin(GL_QUADS);
+             glVertex2f(0, 0);
+             glVertex2f(screenWidth, 0);
+             glVertex2f(screenWidth, screenHeight);
+             glVertex2f(0, screenHeight);
+             glEnd();
+         } else if (gThermalMode == 2) {
+             // Enhanced mode - blue tint with enhanced contrast
+             glColor4f(0.0f, 0.2f, 0.4f, 0.25f);
+             glBegin(GL_QUADS);
+             glVertex2f(0, 0);
+             glVertex2f(screenWidth, 0);
+             glVertex2f(screenWidth, screenHeight);
+             glVertex2f(0, screenHeight);
+             glEnd();
+         }
          
-         glBegin(GL_QUADS);
-         glVertex2f(heatX - 10, heatY - 10);
-         glVertex2f(heatX + 10, heatY - 10);
-         glVertex2f(heatX + 10, heatY + 10);
-         glVertex2f(heatX - 10, heatY + 10);
-         glEnd();
+         // Simulate thermal signatures across the view
+         float time = XPLMGetElapsedTime();
+         for (int i = 0; i < 6; i++) {
+             for (int j = 0; j < 4; j++) {
+                 float x = (i + 1) * screenWidth / 7.0f;
+                 float y = (j + 1) * screenHeight / 5.0f;
+                 
+                 float intensity = (sinf(time * 0.2f + i * 0.5f + j * 0.3f) + 1.0f) * 0.4f;
+                 float size = 12.0f + intensity * 20.0f;
+                 
+                 if (gThermalMode == 1) {
+                     // White hot
+                     glColor4f(1.0f, 0.9f, 0.8f, intensity * 0.6f);
+                 } else {
+                     // Enhanced mode
+                     glColor4f(1.0f, 0.7f, 0.3f, intensity * 0.5f);
+                 }
+                 
+                 glBegin(GL_QUADS);
+                 glVertex2f(x - size/2, y - size/2);
+                 glVertex2f(x + size/2, y - size/2);
+                 glVertex2f(x + size/2, y + size/2);
+                 glVertex2f(x - size/2, y + size/2);
+                 glEnd();
+             }
+         }
+         
+         glDisable(GL_BLEND);
      }
  
      // Draw HUD info
