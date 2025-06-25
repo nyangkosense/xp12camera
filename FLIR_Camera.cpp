@@ -195,7 +195,13 @@ static float GetDistanceToCamera(float x, float y, float z);
                                        TiltDownCallback, NULL);
  
      // Register thermal overlay drawing callback - use objects phase for better integration
-     XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Modern3D, 1, NULL);
+     int registerResult = XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Modern3D, 1, NULL);
+    if (registerResult) {
+        XPLMDebugString("FLIR Camera System: Drawing callback registered successfully\n");
+    } else {
+        XPLMDebugString("FLIR Camera System: Failed to register drawing callback, trying Panel phase\n");
+        XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Panel, 0, NULL);
+    }
  
      XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
      XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
@@ -401,31 +407,64 @@ static float GetDistanceToCamera(float x, float y, float z);
  {
      if (!gCameraActive) return 1;
     
+    // Debug output to verify callback is being called
+    static int callCount = 0;
+    if (callCount < 5) {
+        XPLMDebugString("FLIR Camera System: DrawThermalOverlay called\n");
+        callCount++;
+    }
+    
     // Update environmental factors and heat sources
     UpdateEnvironmentalFactors();
     UpdateHeatSources();
     DetectAircraft();
  
      // Set up OpenGL for 2D drawing
+     glPushAttrib(GL_ALL_ATTRIB_BITS);
      XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0);
+     
+     // Set up 2D projection
+     glMatrixMode(GL_PROJECTION);
+     glPushMatrix();
+     glLoadIdentity();
+     // glOrtho will be set after getting screen dimensions
+     
+     glMatrixMode(GL_MODELVIEW);
+     glPushMatrix();
+     glLoadIdentity();
+     
+     // Disable depth testing for 2D overlay
+     glDisable(GL_DEPTH_TEST);
  
      // Get screen dimensions
      int screenWidth, screenHeight;
      XPLMGetScreenSize(&screenWidth, &screenHeight);
+     
+     // Now set up the orthographic projection with actual screen dimensions
+     glMatrixMode(GL_PROJECTION);
+     glLoadIdentity();
+     glOrtho(0, screenWidth, 0, screenHeight, -1, 1);
+     glMatrixMode(GL_MODELVIEW);
  
      float centerX = screenWidth / 2.0f;
      float centerY = screenHeight / 2.0f;
  
      // Draw targeting reticle
+     if (callCount < 3) {
+         char debugMsg[256];
+         sprintf(debugMsg, "FLIR: Drawing crosshair at %.0f,%.0f (screen %dx%d)\n", centerX, centerY, screenWidth, screenHeight);
+         XPLMDebugString(debugMsg);
+     }
+     
      glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
-     glLineWidth(2.0f);
+     glLineWidth(5.0f); // Make lines thicker to be more visible
  
      glBegin(GL_LINES);
-     // Crosshair
-     glVertex2f(centerX - 25, centerY);
-     glVertex2f(centerX + 25, centerY);
-     glVertex2f(centerX, centerY - 25);
-     glVertex2f(centerX, centerY + 25);
+     // Crosshair - make it bigger and more visible
+     glVertex2f(centerX - 50, centerY);
+     glVertex2f(centerX + 50, centerY);
+     glVertex2f(centerX, centerY - 50);
+     glVertex2f(centerX, centerY + 50);
      
      // Targeting brackets
      float bracketSize = 60.0f / gZoomLevel;
@@ -525,6 +564,12 @@ static float GetDistanceToCamera(float x, float y, float z);
      
      // Position text in corners (actual text rendering would need XPLMDrawString)
      // This is just showing where the text would go
+     
+     // Restore OpenGL state
+     glPopMatrix();
+     glMatrixMode(GL_PROJECTION);
+     glPopMatrix();
+     glPopAttrib();
      
      return 1;
  }
