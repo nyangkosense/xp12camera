@@ -29,31 +29,37 @@ function draw_flir_hud()
         -- Convert ground speed to knots
         local speed_knots = math.floor(ground_speed * 1.94384)
         
-        -- Set text color to FLIR green
+        -- Set text color to FLIR green and bigger size
         graphics.set_color(0.0, 1.0, 0.0, 1.0)
         
-        -- Top status line
+        -- Use bigger font size for better visibility
+        local font_size = 1.5  -- Scale factor for larger text
+        
+        -- Top status line (bigger text)
         local status_line = string.format("FLIR CAMERA  %s  LAT:%.4f LON:%.4f  ALT:%dft", 
                                          time_string, latitude, longitude, alt_feet)
-        graphics.draw_string(30, SCREEN_HEIGHT - 30, status_line)
+        graphics.draw_string(30, SCREEN_HEIGHT - 40, status_line, "large")
         
-        -- Navigation data
+        -- Navigation data (bigger)
         local nav_line = string.format("HDG:%03d  SPD:%d kts  GS:%.1f m/s", 
                                       math.floor(heading), speed_knots, ground_speed)
-        graphics.draw_string(30, SCREEN_HEIGHT - 50, nav_line)
+        graphics.draw_string(30, SCREEN_HEIGHT - 70, nav_line, "large")
         
-        -- Mission timer
+        -- Mission timer (bigger)
         local mission_time = os.time() - flir_start_time
         local mission_mins = math.floor(mission_time / 60)
         local mission_secs = mission_time % 60
         local mission_line = string.format("MISSION TIME: %02d:%02d", mission_mins, mission_secs)
-        graphics.draw_string(SCREEN_WIDTH - 250, SCREEN_HEIGHT - 30, mission_line)
+        graphics.draw_string(SCREEN_WIDTH - 300, SCREEN_HEIGHT - 40, mission_line, "large")
         
-        -- Target status
-        graphics.draw_string(SCREEN_WIDTH - 250, SCREEN_HEIGHT - 50, "TGT: SCANNING...")
+        -- Target status (bigger)
+        graphics.draw_string(SCREEN_WIDTH - 300, SCREEN_HEIGHT - 70, "TGT: SCANNING...", "large")
         
-        -- Camera status
-        graphics.draw_string(30, 70, "ZOOM: ACTIVE  THERMAL: WHT")
+        -- Camera status (bigger, bottom)
+        graphics.draw_string(30, 90, "ZOOM: ACTIVE  THERMAL: WHT", "large")
+        
+        -- Aircraft identification (bigger)
+        graphics.draw_string(30, SCREEN_HEIGHT - 100, "MARITIME PATROL AIRCRAFT", "large")
         
     end
 end

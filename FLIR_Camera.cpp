@@ -62,6 +62,11 @@ static int gDrawCallbackRegistered = 0;
  static float gCameraHeight = -5.0f;  // Height below aircraft (meters)
  static float gCameraDistance = 3.0f; // Forward/back from aircraft center
 
+// Mouse control for camera
+static int gLastMouseX = 0;
+static int gLastMouseY = 0;
+static float gMouseSensitivity = 0.2f; // Mouse sensitivity multiplier
+
 // Thermal view settings
 static int gThermalMode = 1;         // 0=Off, 1=White Hot, 2=Enhanced
  
@@ -217,7 +222,7 @@ static float GetDistanceToCamera(float x, float y, float z);
  
      XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
      XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
-     XPLMDebugString("FLIR Camera System: Use +/- for zoom, arrows for pan/tilt, T for thermal, SPACE for focus lock\n");
+     XPLMDebugString("FLIR Camera System: MOUSE for smooth pan/tilt, +/- for zoom, arrows for fine adjust, T for thermal, SPACE for target lock\n");
      
      gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag,
                                            "FLIR Thermal Toggle",
@@ -344,7 +349,7 @@ static float GetDistanceToCamera(float x, float y, float z);
  static void PanLeftCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gCameraPan -= 2.0f; // More precise control
+         gCameraPan -= 0.5f; // Very sensitive control
          if (gCameraPan < -180.0f) gCameraPan += 360.0f;
          char msg[256];
          sprintf(msg, "FLIR Camera System: Pan %.1f degrees\n", gCameraPan);
@@ -355,7 +360,7 @@ static float GetDistanceToCamera(float x, float y, float z);
  static void PanRightCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gCameraPan += 2.0f; // More precise control
+         gCameraPan += 0.5f; // Very sensitive control
          if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
          char msg[256];
          sprintf(msg, "FLIR Camera System: Pan %.1f degrees\n", gCameraPan);
@@ -366,7 +371,7 @@ static float GetDistanceToCamera(float x, float y, float z);
  static void TiltUpCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gCameraTilt = fminf(gCameraTilt + 2.0f, 45.0f); // More precise control
+         gCameraTilt = fminf(gCameraTilt + 0.5f, 45.0f); // Very sensitive control
          char msg[256];
          sprintf(msg, "FLIR Camera System: Tilt %.1f degrees\n", gCameraTilt);
          XPLMDebugString(msg);
@@ -376,7 +381,7 @@ static float GetDistanceToCamera(float x, float y, float z);
  static void TiltDownCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gCameraTilt = fmaxf(gCameraTilt - 2.0f, -90.0f); // More precise control
+         gCameraTilt = fmaxf(gCameraTilt - 0.5f, -90.0f); // Very sensitive control
          char msg[256];
          sprintf(msg, "FLIR Camera System: Tilt %.1f degrees\n", gCameraTilt);
          XPLMDebugString(msg);
@@ -523,6 +528,37 @@ static float GetDistanceToCamera(float x, float y, float z);
  
      float centerX = screenWidth / 2.0f;
      float centerY = screenHeight / 2.0f;
+     
+     // Mouse control for camera movement
+     if (gCameraActive && !gTargetLocked) { // Only when not locked
+         int mouseX, mouseY;
+         XPLMGetMouseLocation(&mouseX, &mouseY);
+         
+         static int mouseInitialized = 0;
+         if (!mouseInitialized) {
+             gLastMouseX = mouseX;
+             gLastMouseY = mouseY;
+             mouseInitialized = 1;
+         }
+         
+         // Calculate mouse delta
+         int deltaX = mouseX - gLastMouseX;
+         int deltaY = mouseY - gLastMouseY;
+         
+         // Apply mouse movement to camera (much more sensitive)
+         if (abs(deltaX) > 1 || abs(deltaY) > 1) { // Only if significant movement
+             gCameraPan += deltaX * gMouseSensitivity;
+             gCameraTilt += deltaY * gMouseSensitivity;
+             
+             // Clamp values
+             if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
+             if (gCameraPan < -180.0f) gCameraPan += 360.0f;
+             gCameraTilt = fmaxf(-90.0f, fminf(45.0f, gCameraTilt));
+             
+             gLastMouseX = mouseX;
+             gLastMouseY = mouseY;
+         }
+     }
  
      // Draw targeting reticle
      if (callCount < 3) {
@@ -870,17 +906,23 @@ static void DetectAircraft(void)
 {
     gAircraftCount = 0;
     
-    // Scan through multiplayer aircraft positions (up to 19 other aircraft)
-    for (int i = 0; i < 19 && gAircraftCount < 20; i++) {
+    // Debug output for aircraft detection
+    static int detectCallCount = 0;
+    detectCallCount++;
+    if (detectCallCount % 300 == 1) { // Every ~5 seconds
+        XPLMDebugString("FLIR Camera System: Scanning for AI aircraft and ships...\n");
+    }
+    
+    // **1. Detect AI Aircraft (much more common than multiplayer)**
+    // X-Plane has up to 63 AI aircraft slots
+    for (int i = 0; i < 63 && gAircraftCount < 20; i++) {
         char datarefName[256];
         
-        // Get aircraft position
+        // AI aircraft positions
         sprintf(datarefName, "sim/multiplayer/position/plane%d_x", i + 1);
         XPLMDataRef aircraftX = XPLMFindDataRef(datarefName);
-        
         sprintf(datarefName, "sim/multiplayer/position/plane%d_y", i + 1);
         XPLMDataRef aircraftY = XPLMFindDataRef(datarefName);
-        
         sprintf(datarefName, "sim/multiplayer/position/plane%d_z", i + 1);
         XPLMDataRef aircraftZ = XPLMFindDataRef(datarefName);
         
@@ -889,22 +931,108 @@ static void DetectAircraft(void)
             float y = XPLMGetDataf(aircraftY);
             float z = XPLMGetDataf(aircraftZ);
             
-            // Check if aircraft exists (non-zero position)
-            if (x != 0.0f || y != 0.0f || z != 0.0f) {
+            // Check if aircraft exists and is not our own plane
+            if ((x != 0.0f || y != 0.0f || z != 0.0f)) {
+                float distance = GetDistanceToCamera(x, y, z);
+                if (distance > 50.0f) { // Minimum distance to avoid locking on self
+                    gAircraftPositions[gAircraftCount][0] = x;
+                    gAircraftPositions[gAircraftCount][1] = y;
+                    gAircraftPositions[gAircraftCount][2] = z;
+                    gAircraftDistance[gAircraftCount] = distance;
+                    
+                    // Simulate engine temperature (realistic EGT values)
+                    gAircraftEngineTemp[gAircraftCount] = 450.0f + (rand() % 300);
+                    
+                    // Determine visibility based on distance and conditions
+                    gAircraftVisible[gAircraftCount] = (distance < gCurrentVisibility * 0.8f) ? 1 : 0;
+                    
+                    if (detectCallCount % 300 == 1) {
+                        char debugMsg[256];
+                        sprintf(debugMsg, "FLIR: Found AI aircraft %d at %.0fm\n", i+1, distance);
+                        XPLMDebugString(debugMsg);
+                    }
+                    
+                    gAircraftCount++;
+                }
+            }
+        }
+    }
+    
+    // **2. Detect Ships - try multiple ship/boat datarefs**
+    
+    // Method 1: Try ground vehicle datarefs that might be ships
+    XPLMDataRef shipX = XPLMFindDataRef("sim/flightmodel2/position/local_x");
+    XPLMDataRef shipY = XPLMFindDataRef("sim/flightmodel2/position/local_y"); 
+    XPLMDataRef shipZ = XPLMFindDataRef("sim/flightmodel2/position/local_z");
+    
+    if (shipX && shipY && shipZ && gAircraftCount < 20) {
+        float x = XPLMGetDataf(shipX);
+        float y = XPLMGetDataf(shipY);
+        float z = XPLMGetDataf(shipZ);
+        
+        if (x != 0.0f || y != 0.0f || z != 0.0f) {
+            float distance = GetDistanceToCamera(x, y, z);
+            if (distance > 50.0f) {
                 gAircraftPositions[gAircraftCount][0] = x;
                 gAircraftPositions[gAircraftCount][1] = y;
                 gAircraftPositions[gAircraftCount][2] = z;
-                gAircraftDistance[gAircraftCount] = GetDistanceToCamera(x, y, z);
+                gAircraftDistance[gAircraftCount] = distance;
+                gAircraftEngineTemp[gAircraftCount] = 250.0f + (rand() % 150); // Ships have lower heat
+                gAircraftVisible[gAircraftCount] = (distance < gCurrentVisibility) ? 1 : 0;
                 
-                // Simulate engine temperature (realistic EGT values)
-                gAircraftEngineTemp[gAircraftCount] = 450.0f + (rand() % 300);
-                
-                // Determine visibility based on distance and conditions
-                gAircraftVisible[gAircraftCount] = (gAircraftDistance[gAircraftCount] < gCurrentVisibility * 0.8f) ? 1 : 0;
-                
+                if (detectCallCount % 300 == 1) {
+                    char debugMsg[256];
+                    sprintf(debugMsg, "FLIR: Found ship/vehicle at %.0fm\n", distance);
+                    XPLMDebugString(debugMsg);
+                }
                 gAircraftCount++;
             }
         }
+    }
+    
+    // Method 2: AI boat datarefs
+    for (int i = 0; i < 10 && gAircraftCount < 20; i++) {
+        char datarefName[256];
+        sprintf(datarefName, "sim/multiplayer/position/boat%d_x", i + 1);
+        XPLMDataRef boatX = XPLMFindDataRef(datarefName);
+        sprintf(datarefName, "sim/multiplayer/position/boat%d_y", i + 1);
+        XPLMDataRef boatY = XPLMFindDataRef(datarefName);
+        sprintf(datarefName, "sim/multiplayer/position/boat%d_z", i + 1);
+        XPLMDataRef boatZ = XPLMFindDataRef(datarefName);
+        
+        if (boatX && boatY && boatZ) {
+            float x = XPLMGetDataf(boatX);
+            float y = XPLMGetDataf(boatY);
+            float z = XPLMGetDataf(boatZ);
+            
+            if (x != 0.0f || y != 0.0f || z != 0.0f) {
+                float distance = GetDistanceToCamera(x, y, z);
+                if (distance > 50.0f) {
+                    gAircraftPositions[gAircraftCount][0] = x;
+                    gAircraftPositions[gAircraftCount][1] = y;
+                    gAircraftPositions[gAircraftCount][2] = z;
+                    gAircraftDistance[gAircraftCount] = distance;
+                    
+                    // Ships have engine heat too
+                    gAircraftEngineTemp[gAircraftCount] = 300.0f + (rand() % 200);
+                    gAircraftVisible[gAircraftCount] = (distance < gCurrentVisibility) ? 1 : 0;
+                    
+                    if (detectCallCount % 300 == 1) {
+                        char debugMsg[256];
+                        sprintf(debugMsg, "FLIR: Found ship %d at %.0fm\n", i+1, distance);
+                        XPLMDebugString(debugMsg);
+                    }
+                    
+                    gAircraftCount++;
+                }
+            }
+        }
+    }
+    
+    if (detectCallCount % 300 == 1) {
+        char debugMsg[256];
+        sprintf(debugMsg, "FLIR: Total targets found: %d\n", gAircraftCount);
+        XPLMDebugString(debugMsg);
     }
 }
 
@@ -1165,7 +1293,10 @@ static void FocusLockCallback(void* inRefcon)
                 sprintf(msg, "FLIR Camera System: Target LOCKED at %.0fm - Camera will track automatically\n", gFocusDistance);
                 XPLMDebugString(msg);
             } else {
-                XPLMDebugString("FLIR Camera System: No targets found for lock-on\n");
+                char debugMsg[256];
+                sprintf(debugMsg, "FLIR Camera System: No targets found - Heat sources: %d, Aircraft: %d\n", 
+                        gHeatSourceCount, gAircraftCount);
+                XPLMDebugString(debugMsg);
             }
         } else {
             // Unlock target
