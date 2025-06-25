@@ -579,50 +579,7 @@ static float GetDistanceToCamera(float x, float y, float z);
              glEnd();
          }
          
-         // Draw prominent heat sources using line-based approach for better visibility
-        glLineWidth(3.0f);
-        for (int i = 0; i < 4; i++) {
-            float x = (i + 1) * screenWidth / 5.0f;
-            float y = screenHeight / 2.0f;
-            
-            float size = 40.0f; // Make bigger
-            
-            if (gThermalMode == 1) {
-                // White hot - very bright white
-                glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            } else {
-                // Enhanced mode - bright orange/yellow
-                glColor4f(1.0f, 0.9f, 0.2f, 1.0f);
-            }
-            
-            // Draw heat source as filled area using lines for better visibility
-            for (float dy = -size/2; dy < size/2; dy += 2.0f) {
-                glBegin(GL_LINES);
-                glVertex2f(x - size/2, y + dy);
-                glVertex2f(x + size/2, y + dy);
-                glEnd();
-            }
-            
-            // Add heat glow effect
-            glLineWidth(1.0f);
-            float glowSize = size * 1.5f;
-            if (gThermalMode == 1) {
-                glColor4f(0.8f, 0.8f, 0.8f, 0.6f);
-            } else {
-                glColor4f(0.8f, 0.6f, 0.1f, 0.6f);
-            }
-            
-            // Draw glow as concentric rectangles
-            for (int ring = 0; ring < 3; ring++) {
-                float ringSize = glowSize + ring * 8.0f;
-                glBegin(GL_LINE_LOOP);
-                glVertex2f(x - ringSize/2, y - ringSize/2);
-                glVertex2f(x + ringSize/2, y - ringSize/2);
-                glVertex2f(x + ringSize/2, y + ringSize/2);
-                glVertex2f(x - ringSize/2, y + ringSize/2);
-                glEnd();
-            }
-        }
+         // Only draw realistic heat sources from actual detection, no fake test rectangles
         
         // Draw realistic heat sources if we have any
         if (gHeatSourceCount > 0) {
@@ -659,43 +616,29 @@ static float GetDistanceToCamera(float x, float y, float z);
          glDisable(GL_BLEND);
      }
  
-     // Draw military-style HUD overlay using line graphics
-     glColor4f(0.0f, 1.0f, 0.0f, 0.9f);
-     glLineWidth(2.0f);
+     // Draw realistic military FLIR HUD overlay
+     glColor4f(0.0f, 1.0f, 0.0f, 0.8f);
+     glLineWidth(1.0f);
      
-     // Draw HUD frame border
-     glBegin(GL_LINE_LOOP);
-     glVertex2f(20, 20);
-     glVertex2f(screenWidth - 20, 20);
-     glVertex2f(screenWidth - 20, screenHeight - 20);
-     glVertex2f(20, screenHeight - 20);
-     glEnd();
-     
-     // Draw corner brackets
-     float bracketLen = 30.0f;
+     // Minimal corner reticles only (like real FLIR systems)
+     float reticleSize = 15.0f;
      glBegin(GL_LINES);
-     // Top-left corner
-     glVertex2f(20, 20 + bracketLen); glVertex2f(20, 20); glVertex2f(20, 20); glVertex2f(20 + bracketLen, 20);
-     // Top-right corner  
-     glVertex2f(screenWidth - 20 - bracketLen, 20); glVertex2f(screenWidth - 20, 20); 
-     glVertex2f(screenWidth - 20, 20); glVertex2f(screenWidth - 20, 20 + bracketLen);
-     // Bottom-left corner
-     glVertex2f(20, screenHeight - 20 - bracketLen); glVertex2f(20, screenHeight - 20);
-     glVertex2f(20, screenHeight - 20); glVertex2f(20 + bracketLen, screenHeight - 20);
-     // Bottom-right corner
-     glVertex2f(screenWidth - 20 - bracketLen, screenHeight - 20); glVertex2f(screenWidth - 20, screenHeight - 20);
-     glVertex2f(screenWidth - 20, screenHeight - 20); glVertex2f(screenWidth - 20, screenHeight - 20 - bracketLen);
+     // Top-left reticle
+     glVertex2f(30, 30); glVertex2f(30 + reticleSize, 30);
+     glVertex2f(30, 30); glVertex2f(30, 30 + reticleSize);
+     // Top-right reticle
+     glVertex2f(screenWidth - 30 - reticleSize, 30); glVertex2f(screenWidth - 30, 30);
+     glVertex2f(screenWidth - 30, 30); glVertex2f(screenWidth - 30, 30 + reticleSize);
+     // Bottom-left reticle
+     glVertex2f(30, screenHeight - 30 - reticleSize); glVertex2f(30, screenHeight - 30);
+     glVertex2f(30, screenHeight - 30); glVertex2f(30 + reticleSize, screenHeight - 30);
+     // Bottom-right reticle
+     glVertex2f(screenWidth - 30 - reticleSize, screenHeight - 30); glVertex2f(screenWidth - 30, screenHeight - 30);
+     glVertex2f(screenWidth - 30, screenHeight - 30); glVertex2f(screenWidth - 30, screenHeight - 30 - reticleSize);
      glEnd();
      
-     // Draw data readouts using simple line graphics (simulating text)
-     // float lineHeight = 15.0f; // Currently unused but may be needed for future text spacing
-     float dataStartY = screenHeight - 80.0f;
-     
+     // Professional FLIR HUD using actual text rendering
      // Get current aircraft data
-     float planeX = XPLMGetDataf(gPlaneX);
-     float planeY = XPLMGetDataf(gPlaneY);  
-     float planeZ = XPLMGetDataf(gPlaneZ);
-     float planeHeading = XPLMGetDataf(gPlaneHeading);
      float latitude = XPLMGetDataf(gLatitude);
      float longitude = XPLMGetDataf(gLongitude);
      float altitude = XPLMGetDataf(gAltitude);
@@ -705,193 +648,98 @@ static float GetDistanceToCamera(float x, float y, float z);
      int hours = (int)(zuluTime / 3600.0f) % 24;
      int minutes = (int)((zuluTime - hours * 3600) / 60.0f);
      
+     // Use X-Plane's text rendering for professional look
+     glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
+     
+     // Top status line with actual data (using XPLMDrawString for real text)
+     char statusLine[256];
+     sprintf(statusLine, "FLIR  %02d:%02d UTC  LAT:%.4f LON:%.4f  ALT:%dft  ZOOM:%.1fx", 
+             hours, minutes, latitude, longitude, (int)(altitude * 3.28084f), gZoomLevel);
+     
+     // Draw the status line using X-Plane's text rendering
+     glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
+     XPLMDrawString(NULL, 30, screenHeight - 30, statusLine, NULL, xplmFont_Proportional);
+     
+     // Thermal mode indicator
+     char thermalMode[64];
+     const char* modeNames[] = {"OFF", "WHT", "ENH"};
+     sprintf(thermalMode, "THERMAL: %s", modeNames[gThermalMode]);
+     XPLMDrawString(NULL, 30, screenHeight - 50, thermalMode, NULL, xplmFont_Proportional);
+     
+     // Camera orientation display
+     char cameraInfo[128];
+     sprintf(cameraInfo, "PAN:%.1f  TILT:%.1f", gCameraPan, gCameraTilt);
+     XPLMDrawString(NULL, 30, screenHeight - 70, cameraInfo, NULL, xplmFont_Proportional);
+     
+     // Zoom level indicator (bottom-left, simple and clean)
+     glLineWidth(2.0f);
+     glBegin(GL_LINES);
+     // Simple zoom bar
+     float zoomBar = gZoomLevel * 20.0f;
+     glVertex2f(30, 40);
+     glVertex2f(30 + zoomBar, 40);
+     glVertex2f(30, 35);
+     glVertex2f(30 + zoomBar, 35);
+     glEnd();
+     
+     // Pan/Tilt position indicators (bottom-right)
      glLineWidth(1.0f);
-     
-     // UTC Time display (top-left)
-     glBegin(GL_LINE_LOOP);
-     glVertex2f(30, dataStartY + 60);
-     glVertex2f(180, dataStartY + 60);
-     glVertex2f(180, dataStartY + 20);
-     glVertex2f(30, dataStartY + 20);
-     glEnd();
-     
-     // Draw "UTC" label using simple lines
      glBegin(GL_LINES);
-     // U
-     glVertex2f(40, dataStartY + 50); glVertex2f(40, dataStartY + 30);
-     glVertex2f(40, dataStartY + 30); glVertex2f(50, dataStartY + 30);
-     glVertex2f(50, dataStartY + 30); glVertex2f(50, dataStartY + 50);
-     // T
-     glVertex2f(60, dataStartY + 50); glVertex2f(80, dataStartY + 50);
-     glVertex2f(70, dataStartY + 50); glVertex2f(70, dataStartY + 30);
-     // C
-     glVertex2f(90, dataStartY + 50); glVertex2f(90, dataStartY + 30);
-     glVertex2f(90, dataStartY + 50); glVertex2f(105, dataStartY + 50);
-     glVertex2f(90, dataStartY + 30); glVertex2f(105, dataStartY + 30);
+     // Pan indicator - horizontal line that moves
+     float panPos = (gCameraPan + 180.0f) / 360.0f * 100.0f;
+     glVertex2f(screenWidth - 150, 40);
+     glVertex2f(screenWidth - 50, 40);
+     glVertex2f(screenWidth - 150 + panPos, 35);
+     glVertex2f(screenWidth - 150 + panPos, 45);
      
-     // Time digits - simple representation
-     float timeX = 120;
-     for (int i = 0; i < 4; i++) {
-         int digit;
-         if (i == 0) digit = hours / 10;
-         else if (i == 1) digit = hours % 10;
-         else if (i == 2) digit = minutes / 10;
-         else digit = minutes % 10;
-         
-         // Draw digit as simple pattern
-         glVertex2f(timeX + i*12, dataStartY + 45);
-         glVertex2f(timeX + i*12 + 8, dataStartY + 45);
-         glVertex2f(timeX + i*12, dataStartY + 35);
-         glVertex2f(timeX + i*12 + 8, dataStartY + 35);
-         
-         if (i == 1) { // Add colon after hours
-             glVertex2f(timeX + i*12 + 10, dataStartY + 42);
-             glVertex2f(timeX + i*12 + 10, dataStartY + 38);
-         }
-     }
+     // Tilt indicator - vertical line that moves  
+     float tiltPos = (gCameraTilt + 90.0f) / 135.0f * 30.0f;
+     glVertex2f(screenWidth - 30, 30);
+     glVertex2f(screenWidth - 30, 60);
+     glVertex2f(screenWidth - 35, 30 + tiltPos);
+     glVertex2f(screenWidth - 25, 30 + tiltPos);
      glEnd();
      
-     // Position display (top-right)
-     glBegin(GL_LINE_LOOP);
-     glVertex2f(screenWidth - 250, dataStartY + 60);
-     glVertex2f(screenWidth - 30, dataStartY + 60);
-     glVertex2f(screenWidth - 30, dataStartY + 20);
-     glVertex2f(screenWidth - 250, dataStartY + 20);
-     glEnd();
-     
-     // Draw actual position data using line segments
-     glBegin(GL_LINES);
-     // LAT label
-     glVertex2f(screenWidth - 240, dataStartY + 50); glVertex2f(screenWidth - 240, dataStartY + 30);
-     glVertex2f(screenWidth - 240, dataStartY + 30); glVertex2f(screenWidth - 220, dataStartY + 30);
-     
-     // Draw latitude value as segmented display
-     int latDegrees = (int)fabs(latitude);
-     int latMinutes = (int)((fabs(latitude) - latDegrees) * 60);
-     char latDir = (latitude >= 0) ? 'N' : 'S';
-     
-     // Display latitude digits using line patterns
-     float latX = screenWidth - 200;
-     for (int i = 0; i < 2; i++) { // degrees
-         int digit = (i == 0) ? latDegrees / 10 : latDegrees % 10;
-         // Draw simple digit representation
-         if (digit > 0) {
-             glVertex2f(latX + i*15, dataStartY + 50);
-             glVertex2f(latX + i*15 + 10, dataStartY + 50);
-         }
-         glVertex2f(latX + i*15, dataStartY + 40);
-         glVertex2f(latX + i*15 + 10, dataStartY + 40);
-     }
-     
-     // Longitude display (LON label)
-     glVertex2f(screenWidth - 240, dataStartY + 35); glVertex2f(screenWidth - 220, dataStartY + 35);
-     glVertex2f(screenWidth - 240, dataStartY + 25); glVertex2f(screenWidth - 220, dataStartY + 25);
-     
-     // Display longitude digits
-     int lonDegrees = (int)fabs(longitude);
-     int lonMinutes = (int)((fabs(longitude) - lonDegrees) * 60);
-     char lonDir = (longitude >= 0) ? 'E' : 'W';
-     
-     float lonX = screenWidth - 160;
-     for (int i = 0; i < 3; i++) { // longitude can be 3 digits
-         int digit;
-         if (i == 0) digit = lonDegrees / 100;
-         else if (i == 1) digit = (lonDegrees / 10) % 10;
-         else digit = lonDegrees % 10;
-         
-         if (digit > 0 || i > 0) {
-             glVertex2f(lonX + i*12, dataStartY + 35);
-             glVertex2f(lonX + i*12 + 8, dataStartY + 35);
-         }
-     }
-     
-     // Altitude display (ALT)
-     int altFeet = (int)(altitude * 3.28084f); // Convert meters to feet
-     glVertex2f(screenWidth - 100, dataStartY + 50); glVertex2f(screenWidth - 80, dataStartY + 50);
-     glVertex2f(screenWidth - 100, dataStartY + 40); glVertex2f(screenWidth - 80, dataStartY + 40);
-     
-     // Display altitude digits (avoiding pow function)
-     int altDigits[5];
-     altDigits[0] = (altFeet / 10000) % 10;
-     altDigits[1] = (altFeet / 1000) % 10;
-     altDigits[2] = (altFeet / 100) % 10;
-     altDigits[3] = (altFeet / 10) % 10;
-     altDigits[4] = altFeet % 10;
-     
-     for (int i = 0; i < 5; i++) {
-         if (altDigits[i] > 0 || altFeet >= 1000 || i >= 3) { // Show at least last 2 digits
-             glVertex2f(screenWidth - 75 + i*8, dataStartY + 45);
-             glVertex2f(screenWidth - 70 + i*8, dataStartY + 45);
-         }
-     }
-     glEnd();
-     
-     // Camera status display (bottom-left)
-     glBegin(GL_LINE_LOOP);
-     glVertex2f(30, dataStartY - 20);
-     glVertex2f(220, dataStartY - 20);
-     glVertex2f(220, dataStartY - 60);
-     glVertex2f(30, dataStartY - 60);
-     glEnd();
-     
-     // Camera position relative to aircraft (using planeX, planeY, planeZ)
-     float cameraX = planeX + gCameraDistance * cosf(planeHeading * M_PI / 180.0f);
-     float cameraY = planeY + gCameraHeight;
-     float cameraZ = planeZ + gCameraDistance * sinf(planeHeading * M_PI / 180.0f);
-     
-     // Distance from aircraft to camera mount
-     float mountDistance = sqrtf(gCameraDistance * gCameraDistance + gCameraHeight * gCameraHeight);
-     
-     glBegin(GL_LINES);
-     // ZOOM label and bar
-     float zoomBarLength = gZoomLevel * 10.0f;
-     glVertex2f(40, dataStartY - 30);
-     glVertex2f(40 + zoomBarLength, dataStartY - 30);
-     glVertex2f(40, dataStartY - 35);
-     glVertex2f(40 + zoomBarLength, dataStartY - 35);
-     
-     // Camera mount distance indicator (using calculated distance)
-     float distanceBar = (mountDistance / 10.0f) * 15.0f; // Scale for display
-     glVertex2f(40, dataStartY - 45);
-     glVertex2f(40 + distanceBar, dataStartY - 45);
-     glVertex2f(40, dataStartY - 50);
-     glVertex2f(40 + distanceBar, dataStartY - 50);
-     
-     // Pan/Tilt indicators using actual values
-     float panIndicator = (gCameraPan + 180.0f) / 360.0f * 100.0f; // Normalize to 0-100
-     float tiltIndicator = (gCameraTilt + 90.0f) / 135.0f * 100.0f; // Normalize to 0-100
-     
-     // Pan indicator
-     glVertex2f(120, dataStartY - 30);
-     glVertex2f(120 + panIndicator * 0.8f, dataStartY - 30);
-     
-     // Tilt indicator  
-     glVertex2f(120, dataStartY - 45);
-     glVertex2f(120 + tiltIndicator * 0.8f, dataStartY - 45);
-     glEnd();
-     
-     // Target lock indicator (center-bottom)
+     // Target lock indicator (minimal and professional)
      if (gTargetLocked) {
-         glColor4f(1.0f, 0.0f, 0.0f, 1.0f); // Red for locked
-         glLineWidth(3.0f);
+         glColor4f(1.0f, 0.0f, 0.0f, 0.9f); // Red for locked
+         glLineWidth(2.0f);
+         
+         // Simple lock indicator box around center crosshair
          glBegin(GL_LINE_LOOP);
-         glVertex2f(centerX - 100, 80);
-         glVertex2f(centerX + 100, 80);
-         glVertex2f(centerX + 100, 40);
-         glVertex2f(centerX - 100, 40);
+         glVertex2f(centerX - 80, centerY - 80);
+         glVertex2f(centerX + 80, centerY - 80);
+         glVertex2f(centerX + 80, centerY + 80);
+         glVertex2f(centerX - 80, centerY + 80);
          glEnd();
          
-         // Draw "LOCKED" indicator with simple graphics
+         // Lock indicator corners
          glBegin(GL_LINES);
-         // Simple lines to represent "LOCKED" text
-         for (int i = 0; i < 5; i++) {
-             float x = centerX - 80 + i * 32;
-             glVertex2f(x, 65);
-             glVertex2f(x + 20, 65);
-             glVertex2f(x, 55);
-             glVertex2f(x + 20, 55);
-         }
+         // Corner brackets
+         float lockSize = 20.0f;
+         // Top-left
+         glVertex2f(centerX - 80, centerY + 80 - lockSize); glVertex2f(centerX - 80, centerY + 80);
+         glVertex2f(centerX - 80, centerY + 80); glVertex2f(centerX - 80 + lockSize, centerY + 80);
+         // Top-right
+         glVertex2f(centerX + 80 - lockSize, centerY + 80); glVertex2f(centerX + 80, centerY + 80);
+         glVertex2f(centerX + 80, centerY + 80); glVertex2f(centerX + 80, centerY + 80 - lockSize);
+         // Bottom-left
+         glVertex2f(centerX - 80, centerY - 80 + lockSize); glVertex2f(centerX - 80, centerY - 80);
+         glVertex2f(centerX - 80, centerY - 80); glVertex2f(centerX - 80 + lockSize, centerY - 80);
+         // Bottom-right
+         glVertex2f(centerX + 80 - lockSize, centerY - 80); glVertex2f(centerX + 80, centerY - 80);
+         glVertex2f(centerX + 80, centerY - 80); glVertex2f(centerX + 80, centerY - 80 + lockSize);
          glEnd();
+         
+         // Distance readout (bottom of lock box)
+         if (gFocusDistance > 0) {
+             // Simple distance indicator bar
+             float distBar = fminf(gFocusDistance / 50.0f, 60.0f); // Scale distance to bar length
+             glBegin(GL_LINES);
+             glVertex2f(centerX - 30, centerY - 100);
+             glVertex2f(centerX - 30 + distBar, centerY - 100);
+             glEnd();
+         }
      }
      
      // Range circles around center
@@ -915,11 +763,12 @@ static float GetDistanceToCamera(float x, float y, float z);
      glLineWidth(2.0f);
      float headingX = centerX;
      float headingY = screenHeight - 40;
+     float currentHeading = XPLMGetDataf(gPlaneHeading);
      
      glBegin(GL_LINES);
      // Heading scale
      for (int h = 0; h < 360; h += 30) {
-         float angle = (h - planeHeading - gCameraPan) * M_PI / 180.0f;
+         float angle = (h - currentHeading - gCameraPan) * M_PI / 180.0f;
          float x1 = headingX + 100 * sinf(angle);
          float x2 = headingX + 110 * sinf(angle);
          if (x1 > 50 && x1 < screenWidth - 50) {
