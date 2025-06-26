@@ -41,6 +41,10 @@ static XPLMDataRef gWeaponTargLon = NULL;
 static XPLMDataRef gWeaponTargH = NULL;
 static XPLMDataRef gWeaponCount = NULL;
 static XPLMDataRef gWeaponType = NULL;
+static XPLMDataRef gWeaponsArmed = NULL;
+static XPLMDataRef gMissilesArmed = NULL;
+static XPLMDataRef gBombsArmed = NULL;
+static XPLMDataRef gGunsArmed = NULL;
 
 void InitializeSimpleLock()
 {
@@ -60,6 +64,12 @@ void InitializeSimpleLock()
     gWeaponTargH = XPLMFindDataRef("sim/weapons/targ_h");
     gWeaponCount = XPLMFindDataRef("sim/weapons/weapon_count");
     gWeaponType = XPLMFindDataRef("sim/weapons/type");
+    gWeaponsArmed = XPLMFindDataRef("sim/cockpit/weapons/rockets_armed");
+    gMissilesArmed = XPLMFindDataRef("sim/cockpit/weapons/missiles_armed");
+    gBombsArmed = XPLMFindDataRef("sim/cockpit/weapons/bombs_armed");
+    gGunsArmed = XPLMFindDataRef("sim/cockpit/weapons/guns_armed");
+    
+    LogWeaponSystemStatus();
 }
 
 void LockCurrentDirection(float currentPan, float currentTilt)
@@ -137,69 +147,138 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     gTargetAlt = planeAlt + deltaAlt;
     gTargetDesignated = 1;
     
-    if (gWeaponTargLat && gWeaponTargLon && gWeaponTargH && gWeaponCount) {
-        int weaponCount = XPLMGetDatai(gWeaponCount);
-        
-        float targetLatArray[25] = {0};
-        float targetLonArray[25] = {0};
-        float targetHArray[25] = {0};
-        
-        for (int i = 0; i < weaponCount && i < 25; i++) {
-            targetLatArray[i] = (float)gTargetLat;
-            targetLonArray[i] = (float)gTargetLon;
-            targetHArray[i] = (float)gTargetAlt;
-        }
-        
-        XPLMSetDatavf(gWeaponTargLat, targetLatArray, 0, weaponCount);
-        XPLMSetDatavf(gWeaponTargLon, targetLonArray, 0, weaponCount);
-        XPLMSetDatavf(gWeaponTargH, targetHArray, 0, weaponCount);
-        
-        char debugMsg[256];
-        snprintf(debugMsg, sizeof(debugMsg), "FLIR: TV Human target set for %d weapons at %.6f°N %.6f°W, Alt: %.0fm", 
-                weaponCount, gTargetLat, gTargetLon, gTargetAlt);
-        XPLMDebugString(debugMsg);
-    }
+    LogWeaponSystemStatus();
     
     if (gGPSLockCommand) {
         XPLMCommandOnce(gGPSLockCommand);
+        
+        char debugMsg[256];
+        snprintf(debugMsg, sizeof(debugMsg), "FLIR: GPS target locked at %.6f°N %.6f°W, Alt: %.0fm (Range: %.0fm)", 
+                gTargetLat, gTargetLon, gTargetAlt, targetRange);
+        XPLMDebugString(debugMsg);
+        XPLMDebugString("FLIR: GPS guidance active - use F5 to fire armed weapons\n");
+    } else {
+        XPLMDebugString("FLIR: GPS lock command not available\n");
     }
 }
 
 void FireWeaponAtTarget()
 {
+    XPLMDebugString("FLIR: ===== FIRE WEAPON ATTEMPT =====\n");
+    
     if (!gTargetDesignated) {
-        XPLMDebugString("FLIR: Cannot fire - no target designated\n");
+        XPLMDebugString("FLIR: No target designated - use Space to lock target first\n");
         return;
     }
     
+    LogWeaponSystemStatus();
+    
     if (!gMasterArmDataRef) {
-        XPLMDebugString("FLIR: Cannot fire - master arm dataref unavailable\n");
+        XPLMDebugString("FLIR: Master arm status unavailable\n");
         return;
     }
     
     int masterArm = XPLMGetDatai(gMasterArmDataRef);
     if (!masterArm) {
-        XPLMDebugString("FLIR: Cannot fire - master arm not enabled\n");
+        XPLMDebugString("FLIR: Master arm not enabled - enable master arm first\n");
         return;
     }
     
-    if (gFireAnyArmedCommand) {
-        XPLMCommandOnce(gFireAnyArmedCommand);
-        XPLMDebugString("FLIR: Fire any armed command sent\n");
-    }
-    
-    if (gFireWeaponCommand) {
-        XPLMCommandOnce(gFireWeaponCommand);
-        XPLMDebugString("FLIR: Fire air-to-ground command sent\n");
-    }
-    
     char fireMsg[256];
-    snprintf(fireMsg, sizeof(fireMsg), "FLIR: Weapon firing attempted at target %.6f°N %.6f°W\n", 
+    snprintf(fireMsg, sizeof(fireMsg), "FLIR: Target ready at %.6f°N %.6f°W - use F5 to fire armed weapons\n", 
             gTargetLat, gTargetLon);
     XPLMDebugString(fireMsg);
+    XPLMDebugString("FLIR: ===================================\n");
 }
 
 int IsTargetDesignated()
 {
     return gTargetDesignated;
+}
+
+void LogWeaponSystemStatus()
+{
+    XPLMDebugString("FLIR: ===== WEAPON SYSTEM DEBUG =====\n");
+    
+    if (gWeaponCount) {
+        int weaponCount = XPLMGetDatai(gWeaponCount);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "FLIR: Total weapons detected: %d\n", weaponCount);
+        XPLMDebugString(msg);
+        
+        if (gWeaponType && weaponCount > 0) {
+            int weaponTypes[25] = {0};
+            XPLMGetDatavi(gWeaponType, weaponTypes, 0, weaponCount);
+            
+            for (int i = 0; i < weaponCount && i < 25; i++) {
+                char typeMsg[256];
+                const char* typeName = "Unknown";
+                switch (weaponTypes[i]) {
+                    case 0: typeName = "None"; break;
+                    case 1: typeName = "Gun"; break;
+                    case 2: typeName = "Rocket"; break;
+                    case 3: typeName = "Missile"; break;
+                    case 4: typeName = "Bomb"; break;
+                    case 5: typeName = "Flare"; break;
+                    case 6: typeName = "Chaff"; break;
+                    default: break;
+                }
+                snprintf(typeMsg, sizeof(typeMsg), "FLIR: Weapon[%d]: Type %d (%s)\n", i, weaponTypes[i], typeName);
+                XPLMDebugString(typeMsg);
+            }
+        }
+    } else {
+        XPLMDebugString("FLIR: No weapon count dataref available\n");
+    }
+    
+    if (gMasterArmDataRef) {
+        int masterArm = XPLMGetDatai(gMasterArmDataRef);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "FLIR: Master arm status: %s\n", masterArm ? "ARMED" : "SAFE");
+        XPLMDebugString(msg);
+    } else {
+        XPLMDebugString("FLIR: Master arm dataref not available\n");
+    }
+    
+    if (gWeaponsArmed) {
+        int rocketsArmed = XPLMGetDatai(gWeaponsArmed);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "FLIR: Rockets armed: %s\n", rocketsArmed ? "YES" : "NO");
+        XPLMDebugString(msg);
+    }
+    
+    if (gMissilesArmed) {
+        int missilesArmed = XPLMGetDatai(gMissilesArmed);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "FLIR: Missiles armed: %s\n", missilesArmed ? "YES" : "NO");
+        XPLMDebugString(msg);
+    }
+    
+    if (gBombsArmed) {
+        int bombsArmed = XPLMGetDatai(gBombsArmed);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "FLIR: Bombs armed: %s\n", bombsArmed ? "YES" : "NO");
+        XPLMDebugString(msg);
+    }
+    
+    if (gGunsArmed) {
+        int gunsArmed = XPLMGetDatai(gGunsArmed);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "FLIR: Guns armed: %s\n", gunsArmed ? "YES" : "NO");
+        XPLMDebugString(msg);
+    }
+    
+    if (gGPSLockCommand) {
+        XPLMDebugString("FLIR: GPS lock command available\n");
+    } else {
+        XPLMDebugString("FLIR: GPS lock command NOT available\n");
+    }
+    
+    if (gFireAnyArmedCommand) {
+        XPLMDebugString("FLIR: Fire any armed command available\n");
+    } else {
+        XPLMDebugString("FLIR: Fire any armed command NOT available\n");
+    }
+    
+    XPLMDebugString("FLIR: ================================\n");
 }

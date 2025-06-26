@@ -22,6 +22,7 @@ void SetTargetCoordinates(double lat, double lon, double alt);
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle);
 void FireWeaponAtTarget();
 int IsTargetDesignated();
+void LogWeaponSystemStatus();
 
 #ifdef __cplusplus
 }
