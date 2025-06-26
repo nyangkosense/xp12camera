@@ -33,7 +33,14 @@ static XPLMDataRef gLonDataRef = NULL;
 static XPLMDataRef gAltDataRef = NULL;
 static XPLMCommandRef gGPSLockCommand = NULL;
 static XPLMCommandRef gFireWeaponCommand = NULL;
+static XPLMCommandRef gFireAnyArmedCommand = NULL;
 static XPLMDataRef gMasterArmDataRef = NULL;
+
+static XPLMDataRef gWeaponTargLat = NULL;
+static XPLMDataRef gWeaponTargLon = NULL;
+static XPLMDataRef gWeaponTargH = NULL;
+static XPLMDataRef gWeaponCount = NULL;
+static XPLMDataRef gWeaponType = NULL;
 
 void InitializeSimpleLock()
 {
@@ -45,7 +52,14 @@ void InitializeSimpleLock()
     gAltDataRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
     gGPSLockCommand = XPLMFindCommand("sim/weapons/GPS_lock_here");
     gFireWeaponCommand = XPLMFindCommand("sim/weapons/fire_air_to_ground");
+    gFireAnyArmedCommand = XPLMFindCommand("sim/weapons/fire_any_armed");
     gMasterArmDataRef = XPLMFindDataRef("sim/cockpit2/weapons/master_arm");
+    
+    gWeaponTargLat = XPLMFindDataRef("sim/weapons/targ_lat");
+    gWeaponTargLon = XPLMFindDataRef("sim/weapons/targ_lon");
+    gWeaponTargH = XPLMFindDataRef("sim/weapons/targ_h");
+    gWeaponCount = XPLMFindDataRef("sim/weapons/weapon_count");
+    gWeaponType = XPLMFindDataRef("sim/weapons/type");
 }
 
 void LockCurrentDirection(float currentPan, float currentTilt)
@@ -123,20 +137,43 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     gTargetAlt = planeAlt + deltaAlt;
     gTargetDesignated = 1;
     
-    if (gGPSLockCommand) {
-        XPLMCommandOnce(gGPSLockCommand);
+    if (gWeaponTargLat && gWeaponTargLon && gWeaponTargH && gWeaponCount) {
+        int weaponCount = XPLMGetDatai(gWeaponCount);
+        
+        float targetLatArray[25] = {0};
+        float targetLonArray[25] = {0};
+        float targetHArray[25] = {0};
+        
+        for (int i = 0; i < weaponCount && i < 25; i++) {
+            targetLatArray[i] = (float)gTargetLat;
+            targetLonArray[i] = (float)gTargetLon;
+            targetHArray[i] = (float)gTargetAlt;
+        }
+        
+        XPLMSetDatavf(gWeaponTargLat, targetLatArray, 0, weaponCount);
+        XPLMSetDatavf(gWeaponTargLon, targetLonArray, 0, weaponCount);
+        XPLMSetDatavf(gWeaponTargH, targetHArray, 0, weaponCount);
         
         char debugMsg[256];
-        snprintf(debugMsg, sizeof(debugMsg), "FLIR: Target designated at %.6f°N %.6f°W, Alt: %.0fm", 
-                gTargetLat, gTargetLon, gTargetAlt);
+        snprintf(debugMsg, sizeof(debugMsg), "FLIR: TV Human target set for %d weapons at %.6f°N %.6f°W, Alt: %.0fm", 
+                weaponCount, gTargetLat, gTargetLon, gTargetAlt);
         XPLMDebugString(debugMsg);
+    }
+    
+    if (gGPSLockCommand) {
+        XPLMCommandOnce(gGPSLockCommand);
     }
 }
 
 void FireWeaponAtTarget()
 {
-    if (!gTargetDesignated || !gFireWeaponCommand || !gMasterArmDataRef) {
-        XPLMDebugString("FLIR: Cannot fire - no target designated or weapon system unavailable\n");
+    if (!gTargetDesignated) {
+        XPLMDebugString("FLIR: Cannot fire - no target designated\n");
+        return;
+    }
+    
+    if (!gMasterArmDataRef) {
+        XPLMDebugString("FLIR: Cannot fire - master arm dataref unavailable\n");
         return;
     }
     
@@ -146,10 +183,18 @@ void FireWeaponAtTarget()
         return;
     }
     
-    XPLMCommandOnce(gFireWeaponCommand);
+    if (gFireAnyArmedCommand) {
+        XPLMCommandOnce(gFireAnyArmedCommand);
+        XPLMDebugString("FLIR: Fire any armed command sent\n");
+    }
+    
+    if (gFireWeaponCommand) {
+        XPLMCommandOnce(gFireWeaponCommand);
+        XPLMDebugString("FLIR: Fire air-to-ground command sent\n");
+    }
     
     char fireMsg[256];
-    snprintf(fireMsg, sizeof(fireMsg), "FLIR: Weapon fired at target %.6f°N %.6f°W\n", 
+    snprintf(fireMsg, sizeof(fireMsg), "FLIR: Weapon firing attempted at target %.6f°N %.6f°W\n", 
             gTargetLat, gTargetLon);
     XPLMDebugString(fireMsg);
 }
