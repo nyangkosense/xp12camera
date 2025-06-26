@@ -1,9 +1,8 @@
 /*
  * FLIR_SimpleLock.cpp
  * 
- * Enhanced lock-on system using X-Plane's tracking algorithms
- * Implements sophisticated target following like X-Plane's built-in external view
- * Provides smooth tracking for ships, vehicles, and any visual targets
+ * Simple camera lock system for FLIR targeting
+ * Freezes camera movement when locked on target
  */
 
 #include <string.h>
@@ -19,28 +18,20 @@
 #include "XPLMUtilities.h"
 #include "FLIR_SimpleLock.h"
 
-// Simple lock-on state
 static int gLockActive = 0;
-static float gLockedPan = 0.0f;     // Pan angle when locked (for display only)
-static float gLockedTilt = 0.0f;    // Tilt angle when locked (for display only)
+static float gLockedPan = 0.0f;
+static float gLockedTilt = 0.0f;
 
 void InitializeSimpleLock()
 {
     gLockActive = 0;
-    XPLMDebugString("FLIR Simple Lock: Initialized\n");
 }
 
 void LockCurrentDirection(float currentPan, float currentTilt)
 {
-    // Simple lock - just store angles for display and freeze camera movement
     gLockedPan = currentPan;
     gLockedTilt = currentTilt;
     gLockActive = 1;
-    
-    char msg[256];
-    sprintf(msg, "FLIR Camera Lock: Engaged at Pan=%.1f°, Tilt=%.1f°\n", 
-            gLockedPan, gLockedTilt);
-    XPLMDebugString(msg);
 }
 
 void GetLockedAngles(float* outPan, float* outTilt)
@@ -49,7 +40,6 @@ void GetLockedAngles(float* outPan, float* outTilt)
         return;
     }
     
-    // Return stored angles - camera movement is frozen
     *outPan = gLockedPan;
     *outTilt = gLockedTilt;
 }
@@ -57,7 +47,6 @@ void GetLockedAngles(float* outPan, float* outTilt)
 void DisableSimpleLock()
 {
     gLockActive = 0;
-    XPLMDebugString("FLIR Camera Lock: Disabled\n");
 }
 
 int IsSimpleLockActive()

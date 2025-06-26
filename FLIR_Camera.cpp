@@ -6,238 +6,154 @@
  * - Real camera positioning under aircraft (belly-mounted)
  * - True optical zoom with zoom parameter
  * - Pan/tilt camera controls with mouse
- * - Arbitrary point lock-on system
  * - Military-style targeting reticles
  * 
  */
 
- #include <string.h>
- #include <stdio.h>
- #include <stdlib.h>
- #include <math.h>
- #ifndef M_PI
- #define M_PI 3.14159265358979323846
- #endif
- #include "XPLMDisplay.h"
- #include "XPLMUtilities.h"
- #include "XPLMCamera.h"
- #include "XPLMDataAccess.h"
- #include "XPLMGraphics.h"
- #include "XPLMProcessing.h"
- #include "XPLMMenus.h"
- #include "FLIR_SimpleLock.h"
- #include "FLIR_VisualEffects.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <windows.h>
+#include <GL/gl.h>
 
- // OpenGL includes for MinGW
- #include <windows.h>
- #include <GL/gl.h>
- 
- // Plugin globals
- static XPLMHotKeyID gActivateKey = NULL;
- static XPLMHotKeyID gZoomInKey = NULL;
- static XPLMHotKeyID gZoomOutKey = NULL;
- static XPLMHotKeyID gPanLeftKey = NULL;
- static XPLMHotKeyID gPanRightKey = NULL;
- static XPLMHotKeyID gTiltUpKey = NULL;
- static XPLMHotKeyID gTiltDownKey = NULL;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#include "XPLMDisplay.h"
+#include "XPLMUtilities.h"
+#include "XPLMCamera.h"
+#include "XPLMDataAccess.h"
+#include "XPLMGraphics.h"
+#include "XPLMProcessing.h"
+#include "XPLMMenus.h"
+#include "FLIR_SimpleLock.h"
+#include "FLIR_VisualEffects.h"
+static XPLMHotKeyID gActivateKey = NULL;
+static XPLMHotKeyID gZoomInKey = NULL;
+static XPLMHotKeyID gZoomOutKey = NULL;
+static XPLMHotKeyID gPanLeftKey = NULL;
+static XPLMHotKeyID gPanRightKey = NULL;
+static XPLMHotKeyID gTiltUpKey = NULL;
+static XPLMHotKeyID gTiltDownKey = NULL;
 static XPLMHotKeyID gThermalToggleKey = NULL;
 static XPLMHotKeyID gFocusLockKey = NULL;
- 
- // Aircraft position datarefs
- static XPLMDataRef gPlaneX = NULL;
- static XPLMDataRef gPlaneY = NULL;
- static XPLMDataRef gPlaneZ = NULL;
- static XPLMDataRef gPlaneHeading = NULL;
- static XPLMDataRef gPlanePitch = NULL;
- static XPLMDataRef gPlaneRoll = NULL;
- 
- // FLIR camera state
- static int gCameraActive = 0;
-static int gDrawCallbackRegistered = 0;
- static float gZoomLevel = 1.0f;
- static float gCameraPan = 0.0f;      // Left/right rotation (degrees)
- static float gCameraTilt = -15.0f;   // Up/down rotation (degrees)
- static float gCameraHeight = -5.0f;  // Height below aircraft (meters)
- static float gCameraDistance = 3.0f; // Forward/back from aircraft center
 
-// Mouse control for camera
+static XPLMDataRef gPlaneX = NULL;
+static XPLMDataRef gPlaneY = NULL;
+static XPLMDataRef gPlaneZ = NULL;
+static XPLMDataRef gPlaneHeading = NULL;
+static XPLMDataRef gPlanePitch = NULL;
+static XPLMDataRef gPlaneRoll = NULL;
+static XPLMDataRef gManipulatorDisabled = NULL;
+
+static int gCameraActive = 0;
+static int gDrawCallbackRegistered = 0;
+static float gZoomLevel = 1.0f;
+static float gCameraPan = 0.0f;
+static float gCameraTilt = -15.0f;
+static float gCameraHeight = -5.0f;
+static float gCameraDistance = 3.0f;
 static int gLastMouseX = 0;
 static int gLastMouseY = 0;
-static float gMouseSensitivity = 0.2f; // Mouse sensitivity multiplier
-
-// Thermal view settings are now handled by visual effects system
-
-// Dataref to control HUD visibility
-static XPLMDataRef gManipulatorDisabled = NULL;
- 
- // Function declarations
- static void ActivateFLIRCallback(void* inRefcon);
- static void ZoomInCallback(void* inRefcon);
- static void ZoomOutCallback(void* inRefcon);
- static void PanLeftCallback(void* inRefcon);
- static void PanRightCallback(void* inRefcon);
- static void TiltUpCallback(void* inRefcon);
- static void TiltDownCallback(void* inRefcon);
+static float gMouseSensitivity = 0.2f;
+static void ActivateFLIRCallback(void* inRefcon);
+static void ZoomInCallback(void* inRefcon);
+static void ZoomOutCallback(void* inRefcon);
+static void PanLeftCallback(void* inRefcon);
+static void PanRightCallback(void* inRefcon);
+static void TiltUpCallback(void* inRefcon);
+static void TiltDownCallback(void* inRefcon);
 static void ThermalToggleCallback(void* inRefcon);
 static void FocusLockCallback(void* inRefcon);
- 
- static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, 
-                           int inIsLosingControl, 
-                           void* inRefcon);
- 
- static int DrawThermalOverlay(XPLMDrawingPhase inPhase,
-                              int inIsBefore,
-                              void* inRefcon);
-
+static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosingControl, void* inRefcon);
+static int DrawThermalOverlay(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon);
 static void DrawRealisticThermalOverlay(void);
  
- // Plugin lifecycle functions
- PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
- {
-     strcpy(outName, "FLIR Camera System");
-     strcpy(outSig, "flir.camera.system");
-     strcpy(outDesc, "Realistic FLIR camera with zoom and thermal overlay");
+PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
+{
+    strcpy(outName, "FLIR Camera System");
+    strcpy(outSig, "flir.camera.system");
+    strcpy(outDesc, "Realistic FLIR camera with zoom and thermal overlay");
 
-     // Get aircraft position datarefs
-     gPlaneX = XPLMFindDataRef("sim/flightmodel/position/local_x");
-     gPlaneY = XPLMFindDataRef("sim/flightmodel/position/local_y");
-     gPlaneZ = XPLMFindDataRef("sim/flightmodel/position/local_z");
-     gPlaneHeading = XPLMFindDataRef("sim/flightmodel/position/psi");
-     gPlanePitch = XPLMFindDataRef("sim/flightmodel/position/theta");
-     gPlaneRoll = XPLMFindDataRef("sim/flightmodel/position/phi");
+    gPlaneX = XPLMFindDataRef("sim/flightmodel/position/local_x");
+    gPlaneY = XPLMFindDataRef("sim/flightmodel/position/local_y");
+    gPlaneZ = XPLMFindDataRef("sim/flightmodel/position/local_z");
+    gPlaneHeading = XPLMFindDataRef("sim/flightmodel/position/psi");
+    gPlanePitch = XPLMFindDataRef("sim/flightmodel/position/theta");
+    gPlaneRoll = XPLMFindDataRef("sim/flightmodel/position/phi");
+    gManipulatorDisabled = XPLMFindDataRef("sim/operation/prefs/misc/manipulator_disabled");
 
-     // Dataref for HUD control
-     gManipulatorDisabled = XPLMFindDataRef("sim/operation/prefs/misc/manipulator_disabled");
+    InitializeSimpleLock();
+    InitializeVisualEffects();
+    gActivateKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag, "Activate FLIR Camera", ActivateFLIRCallback, NULL);
+    gZoomInKey = XPLMRegisterHotKey(XPLM_VK_EQUAL, xplm_DownFlag, "FLIR Zoom In", ZoomInCallback, NULL);
+    gZoomOutKey = XPLMRegisterHotKey(XPLM_VK_MINUS, xplm_DownFlag, "FLIR Zoom Out", ZoomOutCallback, NULL);
+    gPanLeftKey = XPLMRegisterHotKey(XPLM_VK_LEFT, xplm_DownFlag, "FLIR Pan Left", PanLeftCallback, NULL);
+    gPanRightKey = XPLMRegisterHotKey(XPLM_VK_RIGHT, xplm_DownFlag, "FLIR Pan Right", PanRightCallback, NULL);
+    gTiltUpKey = XPLMRegisterHotKey(XPLM_VK_UP, xplm_DownFlag, "FLIR Tilt Up", TiltUpCallback, NULL);
+    gTiltDownKey = XPLMRegisterHotKey(XPLM_VK_DOWN, xplm_DownFlag, "FLIR Tilt Down", TiltDownCallback, NULL);
+    gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag, "FLIR Visual Effects Toggle", ThermalToggleCallback, NULL);
+    gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "FLIR Focus/Lock Target", FocusLockCallback, NULL);
 
-     // Initialize simple lock system
-     InitializeSimpleLock();
-     
-     // Initialize visual effects system
-     InitializeVisualEffects();
-
-     // Register hotkeys
-     gActivateKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag,
-                                       "Activate FLIR Camera",
-                                       ActivateFLIRCallback, NULL);
-     
-     gZoomInKey = XPLMRegisterHotKey(XPLM_VK_EQUAL, xplm_DownFlag,
-                                     "FLIR Zoom In",
-                                     ZoomInCallback, NULL);
-     
-     gZoomOutKey = XPLMRegisterHotKey(XPLM_VK_MINUS, xplm_DownFlag,
-                                      "FLIR Zoom Out",
-                                      ZoomOutCallback, NULL);
-     
-     gPanLeftKey = XPLMRegisterHotKey(XPLM_VK_LEFT, xplm_DownFlag,
-                                      "FLIR Pan Left",
-                                      PanLeftCallback, NULL);
-     
-     gPanRightKey = XPLMRegisterHotKey(XPLM_VK_RIGHT, xplm_DownFlag,
-                                       "FLIR Pan Right",
-                                       PanRightCallback, NULL);
-     
-     gTiltUpKey = XPLMRegisterHotKey(XPLM_VK_UP, xplm_DownFlag,
-                                     "FLIR Tilt Up",
-                                     TiltUpCallback, NULL);
-     
-     gTiltDownKey = XPLMRegisterHotKey(XPLM_VK_DOWN, xplm_DownFlag,
-                                       "FLIR Tilt Down",
-                                       TiltDownCallback, NULL);
-
-     gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag,
-                                           "FLIR Visual Effects Toggle",
-                                           ThermalToggleCallback, NULL);
-    
-    gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag,
-                                      "FLIR Focus/Lock Target",
-                                      FocusLockCallback, NULL);
-
-     XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
-     XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
-     XPLMDebugString("FLIR Camera System: MOUSE for smooth pan/tilt, +/- for zoom, arrows for fine adjust, T for thermal, SPACE for enhanced lock-on\n");
-     XPLMDebugString("FLIR Camera System: Enhanced tracking uses X-Plane's algorithm for smooth target following\n");
-     
-     return 1;
- }
- 
- PLUGIN_API void XPluginStop(void)
- {
-     // Unregister hotkeys
-     if (gActivateKey) XPLMUnregisterHotKey(gActivateKey);
-     if (gZoomInKey) XPLMUnregisterHotKey(gZoomInKey);
-     if (gZoomOutKey) XPLMUnregisterHotKey(gZoomOutKey);
-     if (gPanLeftKey) XPLMUnregisterHotKey(gPanLeftKey);
-     if (gPanRightKey) XPLMUnregisterHotKey(gPanRightKey);
-     if (gTiltUpKey) XPLMUnregisterHotKey(gTiltUpKey);
-     if (gTiltDownKey) XPLMUnregisterHotKey(gTiltDownKey);
+    return 1;
+}
+PLUGIN_API void XPluginStop(void)
+{
+    if (gActivateKey) XPLMUnregisterHotKey(gActivateKey);
+    if (gZoomInKey) XPLMUnregisterHotKey(gZoomInKey);
+    if (gZoomOutKey) XPLMUnregisterHotKey(gZoomOutKey);
+    if (gPanLeftKey) XPLMUnregisterHotKey(gPanLeftKey);
+    if (gPanRightKey) XPLMUnregisterHotKey(gPanRightKey);
+    if (gTiltUpKey) XPLMUnregisterHotKey(gTiltUpKey);
+    if (gTiltDownKey) XPLMUnregisterHotKey(gTiltDownKey);
     if (gThermalToggleKey) XPLMUnregisterHotKey(gThermalToggleKey);
     if (gFocusLockKey) XPLMUnregisterHotKey(gFocusLockKey);
 
-     // Stop camera control if active
-     if (gCameraActive) {
-         XPLMDontControlCamera();
-         gCameraActive = 0;
-     }
-
-     XPLMDebugString("FLIR Camera System: Plugin stopped\n");
- }
+    if (gCameraActive) {
+        XPLMDontControlCamera();
+        gCameraActive = 0;
+    }
+}
+PLUGIN_API void XPluginDisable(void) { }
+PLUGIN_API int XPluginEnable(void) { return 1; }
+PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) { }
  
- PLUGIN_API void XPluginDisable(void) { }
- PLUGIN_API int XPluginEnable(void) { return 1; }
- PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) { }
- 
- // Hotkey callbacks
- static void ActivateFLIRCallback(void* inRefcon)
- {
-     if (!gCameraActive) {
-         // Activate FLIR camera
-         XPLMDebugString("FLIR Camera System: Activating camera\n");
-         
-         // Take camera control
-         XPLMControlCamera(xplm_ControlCameraUntilViewChanges, FLIRCameraFunc, NULL);
-         gCameraActive = 1;
+static void ActivateFLIRCallback(void* inRefcon)
+{
+    if (!gCameraActive) {
+        XPLMControlCamera(xplm_ControlCameraUntilViewChanges, FLIRCameraFunc, NULL);
+        gCameraActive = 1;
         
-        // Set manipulator disabled for HUD control
         if (gManipulatorDisabled) {
             XPLMSetDatai(gManipulatorDisabled, 1);
         }
         
-        // Register 2D drawing callback for overlays
         if (!gDrawCallbackRegistered) {
             XPLMRegisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
             gDrawCallbackRegistered = 1;
-            XPLMDebugString("FLIR Camera System: 2D overlay callback registered\n");
         }
-         
-         XPLMDebugString("FLIR Camera System: Camera active - mounted under aircraft\n");
-     } else {
-         // Deactivate camera
-         XPLMDontControlCamera();
-         gCameraActive = 0;
-         
-         // Re-enable manipulator
-         if (gManipulatorDisabled) {
-             XPLMSetDatai(gManipulatorDisabled, 0);
-         }
-         
-         // Disable lock when camera deactivated
-         DisableSimpleLock();
-         
-         // Unregister drawing callback to save performance
+    } else {
+        XPLMDontControlCamera();
+        gCameraActive = 0;
+        
+        if (gManipulatorDisabled) {
+            XPLMSetDatai(gManipulatorDisabled, 0);
+        }
+        
+        DisableSimpleLock();
+        
         if (gDrawCallbackRegistered) {
             XPLMUnregisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
             gDrawCallbackRegistered = 0;
-            XPLMDebugString("FLIR Camera System: 2D overlay callback unregistered\n");
         }
-        
-        XPLMDebugString("FLIR Camera System: Camera deactivated\n");
-     }
- }
+    }
+}
  
- static void ZoomInCallback(void* inRefcon)
- {
-     if (gCameraActive) {
-         // More precise zoom steps: 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0
+static void ZoomInCallback(void* inRefcon)
+{
+    if (gCameraActive) {
         if (gZoomLevel < 1.5f) gZoomLevel = 1.5f;
         else if (gZoomLevel < 2.0f) gZoomLevel = 2.0f;
         else if (gZoomLevel < 3.0f) gZoomLevel = 3.0f;
@@ -250,17 +166,13 @@ static void DrawRealisticThermalOverlay(void);
         else if (gZoomLevel < 32.0f) gZoomLevel = 32.0f;
         else if (gZoomLevel < 48.0f) gZoomLevel = 48.0f;
         else if (gZoomLevel < 64.0f) gZoomLevel = 64.0f;
-        else gZoomLevel = 64.0f; // Maximum zoom
-         char msg[256];
-         sprintf(msg, "FLIR Camera System: Zoom %.1fx\n", gZoomLevel);
-         XPLMDebugString(msg);
-     }
- }
+        else gZoomLevel = 64.0f;
+    }
+}
  
- static void ZoomOutCallback(void* inRefcon)
- {
-     if (gCameraActive) {
-         // Reverse zoom steps
+static void ZoomOutCallback(void* inRefcon)
+{
+    if (gCameraActive) {
         if (gZoomLevel > 48.0f) gZoomLevel = 48.0f;
         else if (gZoomLevel > 32.0f) gZoomLevel = 32.0f;
         else if (gZoomLevel > 24.0f) gZoomLevel = 24.0f;
@@ -272,178 +184,136 @@ static void DrawRealisticThermalOverlay(void);
         else if (gZoomLevel > 3.0f) gZoomLevel = 3.0f;
         else if (gZoomLevel > 2.0f) gZoomLevel = 2.0f;
         else if (gZoomLevel > 1.5f) gZoomLevel = 1.5f;
-        else gZoomLevel = 1.0f; // Minimum zoom
-         char msg[256];
-         sprintf(msg, "FLIR Camera System: Zoom %.1fx\n", gZoomLevel);
-         XPLMDebugString(msg);
-     }
- }
+        else gZoomLevel = 1.0f;
+    }
+}
  
- static void PanLeftCallback(void* inRefcon)
- {
-     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
-         gCameraPan -= 0.5f; // Very sensitive control
-         if (gCameraPan < -180.0f) gCameraPan += 360.0f;
-         char msg[256];
-         sprintf(msg, "FLIR Camera System: Pan %.1f degrees\n", gCameraPan);
-         XPLMDebugString(msg);
-     }
- }
+static void PanLeftCallback(void* inRefcon)
+{
+    if (gCameraActive && !IsSimpleLockActive()) {
+        gCameraPan -= 0.5f;
+        if (gCameraPan < -180.0f) gCameraPan += 360.0f;
+    }
+}
  
- static void PanRightCallback(void* inRefcon)
- {
-     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
-         gCameraPan += 0.5f; // Very sensitive control
-         if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
-         char msg[256];
-         sprintf(msg, "FLIR Camera System: Pan %.1f degrees\n", gCameraPan);
-         XPLMDebugString(msg);
-     }
- }
+static void PanRightCallback(void* inRefcon)
+{
+    if (gCameraActive && !IsSimpleLockActive()) {
+        gCameraPan += 0.5f;
+        if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
+    }
+}
  
- static void TiltUpCallback(void* inRefcon)
- {
-     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
-         gCameraTilt = fminf(gCameraTilt + 0.5f, 45.0f); // Very sensitive control
-         char msg[256];
-         sprintf(msg, "FLIR Camera System: Tilt %.1f degrees\n", gCameraTilt);
-         XPLMDebugString(msg);
-     }
- }
+static void TiltUpCallback(void* inRefcon)
+{
+    if (gCameraActive && !IsSimpleLockActive()) {
+        gCameraTilt = fminf(gCameraTilt + 0.5f, 45.0f);
+    }
+}
  
- static void TiltDownCallback(void* inRefcon)
- {
-     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
-         gCameraTilt = fmaxf(gCameraTilt - 0.5f, -90.0f); // Very sensitive control
-         char msg[256];
-         sprintf(msg, "FLIR Camera System: Tilt %.1f degrees\n", gCameraTilt);
-         XPLMDebugString(msg);
-     }
- }
+static void TiltDownCallback(void* inRefcon)
+{
+    if (gCameraActive && !IsSimpleLockActive()) {
+        gCameraTilt = fmaxf(gCameraTilt - 0.5f, -90.0f);
+    }
+}
  
- static void ThermalToggleCallback(void* inRefcon)
- {
-     if (gCameraActive) {
-         // Cycle through visual effect modes
-         CycleVisualModes();
-     }
- }
+static void ThermalToggleCallback(void* inRefcon)
+{
+    if (gCameraActive) {
+        CycleVisualModes();
+    }
+}
 
 static void FocusLockCallback(void* inRefcon)
 {
     if (gCameraActive) {
         if (!IsSimpleLockActive()) {
-            // Lock to current camera direction using enhanced tracking
             LockCurrentDirection(gCameraPan, gCameraTilt);
-            XPLMDebugString("FLIR Camera System: Enhanced tracking engaged\n");
         } else {
-            // Disable enhanced tracking
             DisableSimpleLock();
-            XPLMDebugString("FLIR Camera System: Enhanced tracking disabled\n");
         }
     }
 }
  
- // Camera control function
- static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition,
-                           int inIsLosingControl,
-                           void* inRefcon)
- {
-     if (inIsLosingControl) {
-         // We're losing control, clean up
-         gCameraActive = 0;
-         if (gDrawCallbackRegistered) {
-             XPLMUnregisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
-             gDrawCallbackRegistered = 0;
-         }
-         // Re-enable manipulator
-         if (gManipulatorDisabled) {
-             XPLMSetDatai(gManipulatorDisabled, 0);
-         }
-         DisableSimpleLock();
-         return 0;
-     }
-     
-     if (!gPlaneX || !gPlaneY || !gPlaneZ || !gPlaneHeading || !gPlanePitch || !gPlaneRoll) {
-         return 1; // Keep control but don't update position
-     }
-     
-     // Get current aircraft position and orientation
-     float planeX = XPLMGetDataf(gPlaneX);
-     float planeY = XPLMGetDataf(gPlaneY);
-     float planeZ = XPLMGetDataf(gPlaneZ);
-     float planeHeading = XPLMGetDataf(gPlaneHeading);
-     
-     // Calculate camera position (belly-mounted) first
-     float headingRad = planeHeading * M_PI / 180.0f;
-     
-     // Position camera below and slightly forward of aircraft center
-     outCameraPosition->x = planeX + gCameraDistance * sin(headingRad);
-     outCameraPosition->y = planeY + gCameraHeight;
-     outCameraPosition->z = planeZ + gCameraDistance * cos(headingRad);
-     
-     // Camera orientation control (mouse or enhanced tracking)
-     if (!IsSimpleLockActive()) {
-         // Mouse control for camera movement
-         int mouseX, mouseY;
-         XPLMGetMouseLocation(&mouseX, &mouseY);
-         
-         if (gLastMouseX != 0 || gLastMouseY != 0) {
-             float deltaX = (mouseX - gLastMouseX) * gMouseSensitivity;
-             float deltaY = (mouseY - gLastMouseY) * gMouseSensitivity;
-             
-             gCameraPan += deltaX;
-             gCameraTilt -= deltaY; // Invert Y for natural control
-             
-             // Normalize pan angle
-             while (gCameraPan > 180.0f) gCameraPan -= 360.0f;
-             while (gCameraPan < -180.0f) gCameraPan += 360.0f;
-             
-             // Clamp tilt
-             if (gCameraTilt > 45.0f) gCameraTilt = 45.0f;
-             if (gCameraTilt < -90.0f) gCameraTilt = -90.0f;
-         }
-         
-         gLastMouseX = mouseX;
-         gLastMouseY = mouseY;
-     } else {
-         // Use locked camera angles (camera movement frozen)
-         GetLockedAngles(&gCameraPan, &gCameraTilt);
-     }
-     
-     // Camera orientation (pan/tilt relative to aircraft heading)
-     outCameraPosition->heading = planeHeading + gCameraPan;
-     outCameraPosition->pitch = gCameraTilt;
-     outCameraPosition->roll = 0.0f; // Keep camera level
-     
-     // Apply zoom
-     outCameraPosition->zoom = gZoomLevel;
-     
-     return 1; // Keep controlling camera
- }
+static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosingControl, void* inRefcon)
+{
+    if (inIsLosingControl) {
+        gCameraActive = 0;
+        if (gDrawCallbackRegistered) {
+            XPLMUnregisterDrawCallback(DrawThermalOverlay, xplm_Phase_Window, 0, NULL);
+            gDrawCallbackRegistered = 0;
+        }
+        if (gManipulatorDisabled) {
+            XPLMSetDatai(gManipulatorDisabled, 0);
+        }
+        DisableSimpleLock();
+        return 0;
+    }
+    
+    if (!gPlaneX || !gPlaneY || !gPlaneZ || !gPlaneHeading || !gPlanePitch || !gPlaneRoll) {
+        return 1;
+    }
+    
+    float planeX = XPLMGetDataf(gPlaneX);
+    float planeY = XPLMGetDataf(gPlaneY);
+    float planeZ = XPLMGetDataf(gPlaneZ);
+    float planeHeading = XPLMGetDataf(gPlaneHeading);
+    
+    float headingRad = planeHeading * M_PI / 180.0f;
+    
+    outCameraPosition->x = planeX + gCameraDistance * sin(headingRad);
+    outCameraPosition->y = planeY + gCameraHeight;
+    outCameraPosition->z = planeZ + gCameraDistance * cos(headingRad);
+    
+    if (!IsSimpleLockActive()) {
+        int mouseX, mouseY;
+        XPLMGetMouseLocation(&mouseX, &mouseY);
+        
+        if (gLastMouseX != 0 || gLastMouseY != 0) {
+            float deltaX = (mouseX - gLastMouseX) * gMouseSensitivity;
+            float deltaY = (mouseY - gLastMouseY) * gMouseSensitivity;
+            
+            gCameraPan += deltaX;
+            gCameraTilt -= deltaY;
+            
+            while (gCameraPan > 180.0f) gCameraPan -= 360.0f;
+            while (gCameraPan < -180.0f) gCameraPan += 360.0f;
+            
+            if (gCameraTilt > 45.0f) gCameraTilt = 45.0f;
+            if (gCameraTilt < -90.0f) gCameraTilt = -90.0f;
+        }
+        
+        gLastMouseX = mouseX;
+        gLastMouseY = mouseY;
+    } else {
+        GetLockedAngles(&gCameraPan, &gCameraTilt);
+    }
+    
+    outCameraPosition->heading = planeHeading + gCameraPan;
+    outCameraPosition->pitch = gCameraTilt;
+    outCameraPosition->roll = 0.0f;
+    outCameraPosition->zoom = gZoomLevel;
+    
+    return 1;
+}
  
- // Drawing callback for thermal overlay
- static int DrawThermalOverlay(XPLMDrawingPhase inPhase,
-                              int inIsBefore,
-                              void* inRefcon)
- {
-     if (!gCameraActive) return 1;
-     
-     DrawRealisticThermalOverlay();
-     
-     return 1;
- }
+static int DrawThermalOverlay(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon)
+{
+    if (!gCameraActive) return 1;
+    
+    DrawRealisticThermalOverlay();
+    
+    return 1;
+}
 
-// Enhanced thermal overlay with visual effects
 static void DrawRealisticThermalOverlay(void)
 {
     int screenWidth, screenHeight;
     XPLMGetScreenSize(&screenWidth, &screenHeight);
     
-    // Apply visual effects (monochrome, thermal, noise, etc.)
     RenderVisualEffects(screenWidth, screenHeight);
     
-    // Set up OpenGL for crosshair drawing
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -453,73 +323,58 @@ static void DrawRealisticThermalOverlay(void)
     glPushMatrix();
     glLoadIdentity();
     
-    // Disable depth testing for overlay
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Draw crosshair in center
     float centerX = screenWidth / 2.0f;
     float centerY = screenHeight / 2.0f;
     
-    // Set color based on lock status
     if (IsSimpleLockActive()) {
-        glColor4f(1.0f, 0.0f, 0.0f, 0.9f); // Red when locked
+        glColor4f(1.0f, 0.0f, 0.0f, 0.9f);
     } else {
-        glColor4f(0.0f, 1.0f, 0.0f, 0.9f); // Bright green when scanning
+        glColor4f(0.0f, 1.0f, 0.0f, 0.9f);
     }
     
     glLineWidth(2.0f);
     
-    // Central crosshair
     glBegin(GL_LINES);
-    // Horizontal line
     glVertex2f(centerX - 20, centerY);
     glVertex2f(centerX + 20, centerY);
-    // Vertical line
     glVertex2f(centerX, centerY - 20);
     glVertex2f(centerX, centerY + 20);
     glEnd();
     
-    // Military-style targeting brackets [ ] - FIXED SIZE
-    float bracketSize = 50.0f;  // Fixed size - doesn't change with zoom
+    float bracketSize = 50.0f;
     float bracketLength = 20.0f;
     
     glBegin(GL_LINES);
-    
-    // Top-left bracket [
     glVertex2f(centerX - bracketSize, centerY - bracketSize);
     glVertex2f(centerX - bracketSize + bracketLength, centerY - bracketSize);
     glVertex2f(centerX - bracketSize, centerY - bracketSize);
     glVertex2f(centerX - bracketSize, centerY - bracketSize + bracketLength);
     
-    // Top-right bracket ]
     glVertex2f(centerX + bracketSize, centerY - bracketSize);
     glVertex2f(centerX + bracketSize - bracketLength, centerY - bracketSize);
     glVertex2f(centerX + bracketSize, centerY - bracketSize);
     glVertex2f(centerX + bracketSize, centerY - bracketSize + bracketLength);
     
-    // Bottom-left bracket [
     glVertex2f(centerX - bracketSize, centerY + bracketSize);
     glVertex2f(centerX - bracketSize + bracketLength, centerY + bracketSize);
     glVertex2f(centerX - bracketSize, centerY + bracketSize);
     glVertex2f(centerX - bracketSize, centerY + bracketSize - bracketLength);
     
-    // Bottom-right bracket ]
     glVertex2f(centerX + bracketSize, centerY + bracketSize);
     glVertex2f(centerX + bracketSize - bracketLength, centerY + bracketSize);
     glVertex2f(centerX + bracketSize, centerY + bracketSize);
     glVertex2f(centerX + bracketSize, centerY + bracketSize - bracketLength);
-    
     glEnd();
     
-    // Center dot
     glPointSize(3.0f);
     glBegin(GL_POINTS);
     glVertex2f(centerX, centerY);
     glEnd();
     
-    // Restore OpenGL state
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glLineWidth(1.0f);

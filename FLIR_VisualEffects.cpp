@@ -25,7 +25,6 @@
 #include <windows.h>
 #include <GL/gl.h>
 
-// Visual effects state
 static int gMonochromeEnabled = 0;
 static int gThermalEnabled = 1;
 static int gIREnabled = 0;
@@ -33,8 +32,6 @@ static int gNoiseEnabled = 1;
 static int gScanLinesEnabled = 1;
 static float gBrightness = 1.0f;
 static float gContrast = 1.2f;
-
-// Effect parameters
 static float gNoiseIntensity = 0.1f;
 static float gScanLineOpacity = 0.05f;
 static int gFrameCounter = 0;
@@ -42,47 +39,33 @@ static int gFrameCounter = 0;
 void InitializeVisualEffects()
 {
     srand(time(NULL));
-    XPLMDebugString("FLIR Visual Effects: Initialized\n");
 }
 
 void SetMonochromeFilter(int enabled)
 {
     gMonochromeEnabled = enabled;
-    char msg[256];
-    sprintf(msg, "FLIR Visual Effects: Monochrome %s\n", enabled ? "ON" : "OFF");
-    XPLMDebugString(msg);
 }
 
 void SetThermalMode(int enabled)
 {
     gThermalEnabled = enabled;
-    char msg[256];
-    sprintf(msg, "FLIR Visual Effects: Thermal %s\n", enabled ? "ON" : "OFF");
-    XPLMDebugString(msg);
 }
 
 void SetIRMode(int enabled)
 {
     gIREnabled = enabled;
-    char msg[256];
-    sprintf(msg, "FLIR Visual Effects: IR (B/W) %s\n", enabled ? "ON" : "OFF");
-    XPLMDebugString(msg);
 }
 
 void SetImageEnhancement(float brightness, float contrast)
 {
     gBrightness = brightness;
     gContrast = contrast;
-    char msg[256];
-    sprintf(msg, "FLIR Visual Effects: Brightness=%.1f, Contrast=%.1f\n", brightness, contrast);
-    XPLMDebugString(msg);
 }
 
 void RenderVisualEffects(int screenWidth, int screenHeight)
 {
     gFrameCounter++;
     
-    // Set up OpenGL for 2D screen-space effects
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -92,33 +75,25 @@ void RenderVisualEffects(int screenWidth, int screenHeight)
     glPushMatrix();
     glLoadIdentity();
     
-    // Disable depth testing for screen overlays
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     
-    // Apply monochrome filter
     if (gMonochromeEnabled) {
         RenderMonochromeFilter(screenWidth, screenHeight);
     }
     
-    // Apply thermal vision effects
     if (gThermalEnabled) {
         RenderThermalEffects(screenWidth, screenHeight);
     }
     
-    // IR black/white filter removed - was not realistic
-    
-    // Add camera noise/grain
     if (gNoiseEnabled) {
         RenderCameraNoise(screenWidth, screenHeight);
     }
     
-    // Add scan lines for CRT-like effect
     if (gScanLinesEnabled) {
         RenderScanLines(screenWidth, screenHeight);
     }
     
-    // Restore OpenGL state
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glPopMatrix();
@@ -129,10 +104,7 @@ void RenderVisualEffects(int screenWidth, int screenHeight)
 
 void RenderMonochromeFilter(int screenWidth, int screenHeight)
 {
-    // Monochrome overlay using color blending
-    glBlendFunc(GL_DST_COLOR, GL_ZERO); // Multiply blend mode
-    
-    // Create a subtle green monochrome tint (military night vision style)
+    glBlendFunc(GL_DST_COLOR, GL_ZERO);
     glColor4f(0.3f, 1.0f, 0.3f, 1.0f);
     
     glBegin(GL_QUADS);
@@ -142,7 +114,6 @@ void RenderMonochromeFilter(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Add brightness/contrast adjustment
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     float brightness_adj = (gBrightness - 1.0f) * 0.3f;
@@ -159,12 +130,10 @@ void RenderMonochromeFilter(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Add white temperature scale lines (like thermal mode)
     glColor4f(1.0f, 1.0f, 1.0f, 0.8f);
     glLineWidth(1.0f);
     
     glBegin(GL_LINES);
-    // Temperature scale on left
     for (int i = 0; i < 10; i++) {
         float y = 50 + i * (screenHeight - 100) / 10.0f;
         glVertex2f(10, y);
@@ -176,9 +145,7 @@ void RenderMonochromeFilter(int screenWidth, int screenHeight)
 void RenderThermalEffects(int screenWidth, int screenHeight)
 {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Thermal overlay with heat signature simulation
-    glColor4f(1.0f, 0.4f, 0.0f, 0.15f); // Orange thermal tint
+    glColor4f(1.0f, 0.4f, 0.0f, 0.15f);
     
     glBegin(GL_QUADS);
     glVertex2f(0, 0);
@@ -187,21 +154,16 @@ void RenderThermalEffects(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Add thermal border indicators
     glColor4f(1.0f, 1.0f, 1.0f, 0.8f);
     glLineWidth(1.0f);
     
     glBegin(GL_LINES);
-    // Temperature scale on left
     for (int i = 0; i < 10; i++) {
         float y = 50 + i * (screenHeight - 100) / 10.0f;
         glVertex2f(10, y);
         glVertex2f(25, y);
     }
     glEnd();
-    
-    // Add "WHT HOT" indicator
-    // (Text would be drawn here if we had font rendering)
 }
 
 void RenderCameraNoise(int screenWidth, int screenHeight)
@@ -314,43 +276,37 @@ void CycleVisualModes()
     mode = (mode + 1) % 4; // Only 4 modes now
     
     switch (mode) {
-        case 0: // Standard
+        case 0:
             SetMonochromeFilter(0);
             SetThermalMode(0);
             SetIRMode(0);
             gNoiseEnabled = 0;
             gScanLinesEnabled = 0;
-            XPLMDebugString("FLIR Visual Effects: Standard Mode\n");
             break;
             
-        case 1: // Monochrome
+        case 1:
             SetMonochromeFilter(1);
             SetThermalMode(0);
             SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 1;
-            XPLMDebugString("FLIR Visual Effects: Monochrome Mode\n");
             break;
             
-        case 2: // Thermal
+        case 2:
             SetMonochromeFilter(0);
             SetThermalMode(1);
             SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 0;
-            XPLMDebugString("FLIR Visual Effects: Thermal Mode\n");
             break;
             
-        case 3: // Enhanced Monochrome
+        case 3:
             SetMonochromeFilter(1);
             SetThermalMode(0);
             SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 1;
-            XPLMDebugString("FLIR Visual Effects: Enhanced Monochrome\n");
             break;
-            
-        // case 4 removed - now case 3 is the last mode
     }
 }
 
