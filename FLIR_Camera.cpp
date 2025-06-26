@@ -25,7 +25,8 @@
  #include "XPLMGraphics.h"
  #include "XPLMProcessing.h"
  #include "XPLMMenus.h"
- #include "FLIR_LockOn.h"
+ #include "FLIR_SimpleLock.h"
+ #include "FLIR_VisualEffects.h"
 
  // OpenGL includes for MinGW
  #include <windows.h>
@@ -109,8 +110,11 @@ static void DrawRealisticThermalOverlay(void);
      // Dataref for HUD control
      gManipulatorDisabled = XPLMFindDataRef("sim/operation/prefs/misc/manipulator_disabled");
 
-     // Initialize lock-on system
-     InitializeLockOnSystem();
+     // Initialize simple lock system
+     InitializeSimpleLock();
+     
+     // Initialize visual effects system
+     InitializeVisualEffects();
 
      // Register hotkeys
      gActivateKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag,
@@ -142,7 +146,7 @@ static void DrawRealisticThermalOverlay(void);
                                        TiltDownCallback, NULL);
 
      gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag,
-                                           "FLIR Thermal Toggle",
+                                           "FLIR Visual Effects Toggle",
                                            ThermalToggleCallback, NULL);
     
     gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag,
@@ -216,8 +220,8 @@ static void DrawRealisticThermalOverlay(void);
              XPLMSetDatai(gManipulatorDisabled, 0);
          }
          
-         // Disable lock-on when camera deactivated
-         DisableLockOn();
+         // Disable lock when camera deactivated
+         DisableSimpleLock();
          
          // Unregister drawing callback to save performance
         if (gDrawCallbackRegistered) {
@@ -277,7 +281,7 @@ static void DrawRealisticThermalOverlay(void);
  
  static void PanLeftCallback(void* inRefcon)
  {
-     if (gCameraActive && !IsLockOnActive()) { // Only when not locked
+     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
          gCameraPan -= 0.5f; // Very sensitive control
          if (gCameraPan < -180.0f) gCameraPan += 360.0f;
          char msg[256];
@@ -288,7 +292,7 @@ static void DrawRealisticThermalOverlay(void);
  
  static void PanRightCallback(void* inRefcon)
  {
-     if (gCameraActive && !IsLockOnActive()) { // Only when not locked
+     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
          gCameraPan += 0.5f; // Very sensitive control
          if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
          char msg[256];
@@ -299,7 +303,7 @@ static void DrawRealisticThermalOverlay(void);
  
  static void TiltUpCallback(void* inRefcon)
  {
-     if (gCameraActive && !IsLockOnActive()) { // Only when not locked
+     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
          gCameraTilt = fminf(gCameraTilt + 0.5f, 45.0f); // Very sensitive control
          char msg[256];
          sprintf(msg, "FLIR Camera System: Tilt %.1f degrees\n", gCameraTilt);
@@ -309,7 +313,7 @@ static void DrawRealisticThermalOverlay(void);
  
  static void TiltDownCallback(void* inRefcon)
  {
-     if (gCameraActive && !IsLockOnActive()) { // Only when not locked
+     if (gCameraActive && !IsSimpleLockActive()) { // Only when not locked
          gCameraTilt = fmaxf(gCameraTilt - 0.5f, -90.0f); // Very sensitive control
          char msg[256];
          sprintf(msg, "FLIR Camera System: Tilt %.1f degrees\n", gCameraTilt);
@@ -320,25 +324,22 @@ static void DrawRealisticThermalOverlay(void);
  static void ThermalToggleCallback(void* inRefcon)
  {
      if (gCameraActive) {
-         gThermalMode = (gThermalMode + 1) % 3;
-         char msg[256];
-         const char* modeNames[] = {"Off", "White Hot", "Enhanced"};
-         sprintf(msg, "FLIR Camera System: Thermal mode %s\n", modeNames[gThermalMode]);
-         XPLMDebugString(msg);
+         // Cycle through visual effect modes
+         CycleVisualModes();
      }
  }
 
 static void FocusLockCallback(void* inRefcon)
 {
     if (gCameraActive) {
-        if (!IsLockOnActive()) {
-            // Lock on to current camera direction at 1000m distance
-            SetArbitraryLockPoint(gCameraPan, gCameraTilt, 1000.0f);
-            XPLMDebugString("FLIR Camera System: Lock-on activated\n");
+        if (!IsSimpleLockActive()) {
+            // Lock to current camera direction
+            LockCurrentDirection(gCameraPan, gCameraTilt);
+            XPLMDebugString("FLIR Camera System: Direction locked\n");
         } else {
-            // Disable lock-on
-            DisableLockOn();
-            XPLMDebugString("FLIR Camera System: Lock-on disabled\n");
+            // Disable lock
+            DisableSimpleLock();
+            XPLMDebugString("FLIR Camera System: Lock disabled\n");
         }
     }
 }
@@ -359,7 +360,7 @@ static void FocusLockCallback(void* inRefcon)
          if (gManipulatorDisabled) {
              XPLMSetDatai(gManipulatorDisabled, 0);
          }
-         DisableLockOn();
+         DisableSimpleLock();
          return 0;
      }
      
@@ -376,7 +377,7 @@ static void FocusLockCallback(void* inRefcon)
      float planeRoll = XPLMGetDataf(gPlaneRoll);
      
      // Mouse control for camera movement (only when not locked)
-     if (!IsLockOnActive()) {
+     if (!IsSimpleLockActive()) {
          int mouseX, mouseY;
          XPLMGetMouseLocation(&mouseX, &mouseY);
          
@@ -399,14 +400,12 @@ static void FocusLockCallback(void* inRefcon)
          gLastMouseX = mouseX;
          gLastMouseY = mouseY;
      } else {
-         // Update camera angles based on lock-on point
-         UpdateCameraToLockPoint(&gCameraPan, &gCameraTilt);
+         // Use locked camera angles
+         GetLockedAngles(&gCameraPan, &gCameraTilt);
      }
      
      // Calculate camera position (belly-mounted)
      float headingRad = planeHeading * M_PI / 180.0f;
-     float pitchRad = planePitch * M_PI / 180.0f;
-     float rollRad = planeRoll * M_PI / 180.0f;
      
      // Position camera below and slightly forward of aircraft center
      outCameraPosition->x = planeX + gCameraDistance * sin(headingRad);
@@ -436,13 +435,16 @@ static void FocusLockCallback(void* inRefcon)
      return 1;
  }
 
-// Realistic thermal overlay drawing
+// Enhanced thermal overlay with visual effects
 static void DrawRealisticThermalOverlay(void)
 {
     int screenWidth, screenHeight;
     XPLMGetScreenSize(&screenWidth, &screenHeight);
     
-    // Set up OpenGL for 2D drawing
+    // Apply visual effects (monochrome, thermal, noise, etc.)
+    RenderVisualEffects(screenWidth, screenHeight);
+    
+    // Set up OpenGL for crosshair drawing
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -457,33 +459,12 @@ static void DrawRealisticThermalOverlay(void)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Noise filter effect for thermal camera realism
-    if (gThermalMode > 0) {
-        glColor4f(0.8f, 0.8f, 0.8f, 0.1f);
-        glBegin(GL_POINTS);
-        for (int i = 0; i < 500; i++) {
-            float x = (rand() % screenWidth);
-            float y = (rand() % screenHeight);
-            glVertex2f(x, y);
-        }
-        glEnd();
-        
-        // Subtle scan lines
-        glColor4f(0.7f, 0.7f, 0.7f, 0.05f);
-        glBegin(GL_LINES);
-        for (int y = 0; y < screenHeight; y += 4) {
-            glVertex2f(0, y);
-            glVertex2f(screenWidth, y);
-        }
-        glEnd();
-    }
-    
     // Draw crosshair in center
     float centerX = screenWidth / 2.0f;
     float centerY = screenHeight / 2.0f;
     
     // Set color based on lock status
-    if (IsLockOnActive()) {
+    if (IsSimpleLockActive()) {
         glColor4f(1.0f, 0.0f, 0.0f, 0.9f); // Red when locked
     } else {
         glColor4f(0.0f, 1.0f, 0.0f, 0.9f); // Bright green when scanning
