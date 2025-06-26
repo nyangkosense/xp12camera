@@ -20,11 +20,13 @@ void RenderVisualEffects(int screenWidth, int screenHeight);
 // Individual effect controls
 void SetMonochromeFilter(int enabled);
 void SetThermalMode(int enabled);
+void SetIRMode(int enabled);
 void SetImageEnhancement(float brightness, float contrast);
 
 // Individual effect renderers
 void RenderMonochromeFilter(int screenWidth, int screenHeight);
 void RenderThermalEffects(int screenWidth, int screenHeight);
+void RenderIRFilter(int screenWidth, int screenHeight);
 void RenderCameraNoise(int screenWidth, int screenHeight);
 void RenderScanLines(int screenWidth, int screenHeight);
 

@@ -28,6 +28,7 @@
 // Visual effects state
 static int gMonochromeEnabled = 0;
 static int gThermalEnabled = 1;
+static int gIREnabled = 0;
 static int gNoiseEnabled = 1;
 static int gScanLinesEnabled = 1;
 static float gBrightness = 1.0f;
@@ -57,6 +58,14 @@ void SetThermalMode(int enabled)
     gThermalEnabled = enabled;
     char msg[256];
     sprintf(msg, "FLIR Visual Effects: Thermal %s\n", enabled ? "ON" : "OFF");
+    XPLMDebugString(msg);
+}
+
+void SetIRMode(int enabled)
+{
+    gIREnabled = enabled;
+    char msg[256];
+    sprintf(msg, "FLIR Visual Effects: IR (B/W) %s\n", enabled ? "ON" : "OFF");
     XPLMDebugString(msg);
 }
 
@@ -95,6 +104,11 @@ void RenderVisualEffects(int screenWidth, int screenHeight)
     // Apply thermal vision effects
     if (gThermalEnabled) {
         RenderThermalEffects(screenWidth, screenHeight);
+    }
+    
+    // Apply IR black/white filter
+    if (gIREnabled) {
+        RenderIRFilter(screenWidth, screenHeight);
     }
     
     // Add camera noise/grain
@@ -238,15 +252,62 @@ void RenderScanLines(int screenWidth, int screenHeight)
     glEnd();
 }
 
+void RenderIRFilter(int screenWidth, int screenHeight)
+{
+    // IR Black/White high contrast filter
+    glBlendFunc(GL_DST_COLOR, GL_ZERO); // Multiply blend for desaturation
+    
+    // Create strong black/white contrast effect
+    glColor4f(0.4f, 0.4f, 0.4f, 1.0f); // Desaturate and darken
+    
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Add high contrast overlay
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    // Boost contrast for IR effect
+    float contrast = gContrast * 1.5f;
+    glColor4f(contrast, contrast, contrast, 0.3f);
+    
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Add IR-style edge enhancement
+    glColor4f(1.0f, 1.0f, 1.0f, 0.1f);
+    glLineWidth(1.0f);
+    
+    // Subtle grid pattern for IR sensor simulation
+    glBegin(GL_LINES);
+    for (int x = 0; x < screenWidth; x += 8) {
+        glVertex2f(x, 0);
+        glVertex2f(x, screenHeight);
+    }
+    for (int y = 0; y < screenHeight; y += 8) {
+        glVertex2f(0, y);
+        glVertex2f(screenWidth, y);
+    }
+    glEnd();
+}
+
 void CycleVisualModes()
 {
     static int mode = 0;
-    mode = (mode + 1) % 4;
+    mode = (mode + 1) % 5;
     
     switch (mode) {
         case 0: // Standard
             SetMonochromeFilter(0);
             SetThermalMode(0);
+            SetIRMode(0);
             gNoiseEnabled = 0;
             gScanLinesEnabled = 0;
             XPLMDebugString("FLIR Visual Effects: Standard Mode\n");
@@ -255,6 +316,7 @@ void CycleVisualModes()
         case 1: // Monochrome
             SetMonochromeFilter(1);
             SetThermalMode(0);
+            SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 1;
             XPLMDebugString("FLIR Visual Effects: Monochrome Mode\n");
@@ -263,14 +325,25 @@ void CycleVisualModes()
         case 2: // Thermal
             SetMonochromeFilter(0);
             SetThermalMode(1);
+            SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 0;
             XPLMDebugString("FLIR Visual Effects: Thermal Mode\n");
             break;
             
-        case 3: // Enhanced
+        case 3: // IR Black/White
+            SetMonochromeFilter(0);
+            SetThermalMode(0);
+            SetIRMode(1);
+            gNoiseEnabled = 1;
+            gScanLinesEnabled = 1;
+            XPLMDebugString("FLIR Visual Effects: IR Mode\n");
+            break;
+            
+        case 4: // Enhanced
             SetMonochromeFilter(1);
             SetThermalMode(1);
+            SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 1;
             XPLMDebugString("FLIR Visual Effects: Enhanced Mode\n");
@@ -284,6 +357,7 @@ void GetVisualEffectsStatus(char* statusBuffer, int bufferSize)
     if (gMonochromeEnabled && gThermalEnabled) mode = "ENHANCED";
     else if (gThermalEnabled) mode = "THERMAL";
     else if (gMonochromeEnabled) mode = "MONO";
+    else if (gIREnabled) mode = "IR B/W";
     
     snprintf(statusBuffer, bufferSize, "VFX: %s", mode);
     statusBuffer[bufferSize - 1] = '\0';

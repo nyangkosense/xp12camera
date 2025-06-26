@@ -65,8 +65,7 @@ static int gLastMouseX = 0;
 static int gLastMouseY = 0;
 static float gMouseSensitivity = 0.2f; // Mouse sensitivity multiplier
 
-// Thermal view settings
-static int gThermalMode = 1;         // 0=Off, 1=White Hot, 2=Enhanced
+// Thermal view settings are now handled by visual effects system
 
 // Dataref to control HUD visibility
 static XPLMDataRef gManipulatorDisabled = NULL;
@@ -155,7 +154,8 @@ static void DrawRealisticThermalOverlay(void);
 
      XPLMDebugString("FLIR Camera System: Plugin loaded successfully\n");
      XPLMDebugString("FLIR Camera System: Press F9 to activate camera\n");
-     XPLMDebugString("FLIR Camera System: MOUSE for smooth pan/tilt, +/- for zoom, arrows for fine adjust, T for thermal, SPACE for lock-on\n");
+     XPLMDebugString("FLIR Camera System: MOUSE for smooth pan/tilt, +/- for zoom, arrows for fine adjust, T for thermal, SPACE for enhanced lock-on\n");
+     XPLMDebugString("FLIR Camera System: Enhanced tracking uses X-Plane's algorithm for smooth target following\n");
      
      return 1;
  }
@@ -333,13 +333,13 @@ static void FocusLockCallback(void* inRefcon)
 {
     if (gCameraActive) {
         if (!IsSimpleLockActive()) {
-            // Lock to current camera direction
+            // Lock to current camera direction using enhanced tracking
             LockCurrentDirection(gCameraPan, gCameraTilt);
-            XPLMDebugString("FLIR Camera System: Direction locked\n");
+            XPLMDebugString("FLIR Camera System: Enhanced tracking engaged\n");
         } else {
-            // Disable lock
+            // Disable enhanced tracking
             DisableSimpleLock();
-            XPLMDebugString("FLIR Camera System: Lock disabled\n");
+            XPLMDebugString("FLIR Camera System: Enhanced tracking disabled\n");
         }
     }
 }
@@ -373,11 +373,18 @@ static void FocusLockCallback(void* inRefcon)
      float planeY = XPLMGetDataf(gPlaneY);
      float planeZ = XPLMGetDataf(gPlaneZ);
      float planeHeading = XPLMGetDataf(gPlaneHeading);
-     float planePitch = XPLMGetDataf(gPlanePitch);
-     float planeRoll = XPLMGetDataf(gPlaneRoll);
      
-     // Mouse control for camera movement (only when not locked)
+     // Calculate camera position (belly-mounted) first
+     float headingRad = planeHeading * M_PI / 180.0f;
+     
+     // Position camera below and slightly forward of aircraft center
+     outCameraPosition->x = planeX + gCameraDistance * sin(headingRad);
+     outCameraPosition->y = planeY + gCameraHeight;
+     outCameraPosition->z = planeZ + gCameraDistance * cos(headingRad);
+     
+     // Camera orientation control (mouse or enhanced tracking)
      if (!IsSimpleLockActive()) {
+         // Mouse control for camera movement
          int mouseX, mouseY;
          XPLMGetMouseLocation(&mouseX, &mouseY);
          
@@ -400,17 +407,12 @@ static void FocusLockCallback(void* inRefcon)
          gLastMouseX = mouseX;
          gLastMouseY = mouseY;
      } else {
-         // Use locked camera angles
-         GetLockedAngles(&gCameraPan, &gCameraTilt);
+         // Use enhanced tracking algorithm like X-Plane's built-in system
+         CalculateEnhancedTrackingCamera(&gCameraPan, &gCameraTilt,
+                                       planeX, planeY, planeZ,
+                                       planeHeading,
+                                       outCameraPosition->x, outCameraPosition->y, outCameraPosition->z);
      }
-     
-     // Calculate camera position (belly-mounted)
-     float headingRad = planeHeading * M_PI / 180.0f;
-     
-     // Position camera below and slightly forward of aircraft center
-     outCameraPosition->x = planeX + gCameraDistance * sin(headingRad);
-     outCameraPosition->y = planeY + gCameraHeight;
-     outCameraPosition->z = planeZ + gCameraDistance * cos(headingRad);
      
      // Camera orientation (pan/tilt relative to aircraft heading)
      outCameraPosition->heading = planeHeading + gCameraPan;

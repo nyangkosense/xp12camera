@@ -1,5 +1,4 @@
 -- FLIR Camera HUD Display Script for FlyWithLua
--- Simplified version to prevent engine crashes
 -- Toggle with macro: FLIR Toggle HUD
 
 -- Global variables
@@ -54,7 +53,7 @@ function draw_flir_hud()
         
         graphics.draw_string(SCREEN_WIDTH - 300, SCREEN_HEIGHT - 70, "TGT: SCANNING...", "large")
         graphics.draw_string(30, 90, "ZOOM: ACTIVE  THERMAL: WHT", "large")
-        graphics.draw_string(30, SCREEN_HEIGHT - 100, "MARITIME PATROL AIRCRAFT", "large")
+        graphics.draw_string(30, SCREEN_HEIGHT - 100, "A319 MTP AIRCRAFT", "large")
     end
 end
 

@@ -1,7 +1,8 @@
 /*
  * FLIR_SimpleLock.h
  * 
- * Header file for simple arbitrary point lock-on system
+ * Enhanced lock-on system using X-Plane's tracking algorithms
+ * Provides smooth target following like X-Plane's built-in external view
  */
 
 #ifndef FLIR_SIMPLELOCK_H
@@ -11,13 +12,18 @@
 extern "C" {
 #endif
 
-// Initialize the simple lock system
+// Initialize the enhanced lock system
 void InitializeSimpleLock();
 
-// Lock to current camera direction
+// Lock to current camera direction (enhanced algorithm)
 void LockCurrentDirection(float currentPan, float currentTilt);
 
-// Get locked camera angles
+// Calculate enhanced tracking camera position
+void CalculateEnhancedTrackingCamera(float* outPan, float* outTilt, 
+                                   float aircraftX, float aircraftY, float aircraftZ,
+                                   float aircraftHeading, float cameraX, float cameraY, float cameraZ);
+
+// Get locked camera angles (legacy support)
 void GetLockedAngles(float* outPan, float* outTilt);
 
 // Disable lock
