@@ -98,7 +98,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gTiltDownKey = XPLMRegisterHotKey(XPLM_VK_DOWN, xplm_DownFlag, "FLIR Tilt Down", TiltDownCallback, NULL);
     gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag, "FLIR Visual Effects Toggle", ThermalToggleCallback, NULL);
     gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "FLIR Focus/Lock Target", FocusLockCallback, NULL);
-    gWeaponFireKey = XPLMRegisterHotKey(XPLM_VK_ENTER, xplm_DownFlag, "FLIR Fire Weapon at Target", WeaponFireCallback, NULL);
+    gWeaponFireKey = XPLMRegisterHotKey(XPLM_VK_G, xplm_DownFlag, "FLIR Toggle Active Guidance", WeaponFireCallback, NULL);
 
     return 1;
 }
