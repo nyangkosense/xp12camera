@@ -106,10 +106,7 @@ void RenderVisualEffects(int screenWidth, int screenHeight)
         RenderThermalEffects(screenWidth, screenHeight);
     }
     
-    // Apply IR black/white filter
-    if (gIREnabled) {
-        RenderIRFilter(screenWidth, screenHeight);
-    }
+    // IR black/white filter removed - was not realistic
     
     // Add camera noise/grain
     if (gNoiseEnabled) {
@@ -160,6 +157,19 @@ void RenderMonochromeFilter(int screenWidth, int screenHeight)
     glVertex2f(screenWidth, 0);
     glVertex2f(screenWidth, screenHeight);
     glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Add white temperature scale lines (like thermal mode)
+    glColor4f(1.0f, 1.0f, 1.0f, 0.8f);
+    glLineWidth(1.0f);
+    
+    glBegin(GL_LINES);
+    // Temperature scale on left
+    for (int i = 0; i < 10; i++) {
+        float y = 50 + i * (screenHeight - 100) / 10.0f;
+        glVertex2f(10, y);
+        glVertex2f(25, y);
+    }
     glEnd();
 }
 
@@ -301,7 +311,7 @@ void RenderIRFilter(int screenWidth, int screenHeight)
 void CycleVisualModes()
 {
     static int mode = 0;
-    mode = (mode + 1) % 5;
+    mode = (mode + 1) % 4; // Only 4 modes now
     
     switch (mode) {
         case 0: // Standard
@@ -331,23 +341,16 @@ void CycleVisualModes()
             XPLMDebugString("FLIR Visual Effects: Thermal Mode\n");
             break;
             
-        case 3: // IR Black/White
-            SetMonochromeFilter(0);
-            SetThermalMode(0);
-            SetIRMode(1);
-            gNoiseEnabled = 1;
-            gScanLinesEnabled = 1;
-            XPLMDebugString("FLIR Visual Effects: IR Mode\n");
-            break;
-            
-        case 4: // Enhanced
+        case 3: // Enhanced Monochrome
             SetMonochromeFilter(1);
-            SetThermalMode(1);
+            SetThermalMode(0);
             SetIRMode(0);
             gNoiseEnabled = 1;
             gScanLinesEnabled = 1;
-            XPLMDebugString("FLIR Visual Effects: Enhanced Mode\n");
+            XPLMDebugString("FLIR Visual Effects: Enhanced Monochrome\n");
             break;
+            
+        // case 4 removed - now case 3 is the last mode
     }
 }
 
@@ -357,7 +360,6 @@ void GetVisualEffectsStatus(char* statusBuffer, int bufferSize)
     if (gMonochromeEnabled && gThermalEnabled) mode = "ENHANCED";
     else if (gThermalEnabled) mode = "THERMAL";
     else if (gMonochromeEnabled) mode = "MONO";
-    else if (gIREnabled) mode = "IR B/W";
     
     snprintf(statusBuffer, bufferSize, "VFX: %s", mode);
     statusBuffer[bufferSize - 1] = '\0';

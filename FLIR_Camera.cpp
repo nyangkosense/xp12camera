@@ -407,11 +407,8 @@ static void FocusLockCallback(void* inRefcon)
          gLastMouseX = mouseX;
          gLastMouseY = mouseY;
      } else {
-         // Use enhanced tracking algorithm like X-Plane's built-in system
-         CalculateEnhancedTrackingCamera(&gCameraPan, &gCameraTilt,
-                                       planeX, planeY, planeZ,
-                                       planeHeading,
-                                       outCameraPosition->x, outCameraPosition->y, outCameraPosition->z);
+         // Use locked camera angles (camera movement frozen)
+         GetLockedAngles(&gCameraPan, &gCameraTilt);
      }
      
      // Camera orientation (pan/tilt relative to aircraft heading)

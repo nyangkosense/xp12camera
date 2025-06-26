@@ -18,10 +18,6 @@ void InitializeSimpleLock();
 // Lock to current camera direction (enhanced algorithm)
 void LockCurrentDirection(float currentPan, float currentTilt);
 
-// Calculate enhanced tracking camera position
-void CalculateEnhancedTrackingCamera(float* outPan, float* outTilt, 
-                                   float aircraftX, float aircraftY, float aircraftZ,
-                                   float aircraftHeading, float cameraX, float cameraY, float cameraZ);
 
 // Get locked camera angles (legacy support)
 void GetLockedAngles(float* outPan, float* outTilt);
