@@ -149,6 +149,13 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     
     LogWeaponSystemStatus();
     
+    if (gMissilesArmed && gBombsArmed && gWeaponsArmed) {
+        XPLMSetDatai(gMissilesArmed, 1);
+        XPLMSetDatai(gBombsArmed, 1);
+        XPLMSetDatai(gWeaponsArmed, 1);
+        XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
+    }
+    
     if (gGPSLockCommand) {
         XPLMCommandOnce(gGPSLockCommand);
         
