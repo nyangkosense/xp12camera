@@ -39,6 +39,8 @@ static XPLMDataRef gMasterArmDataRef = NULL;
 static XPLMDataRef gWeaponTargLat = NULL;
 static XPLMDataRef gWeaponTargLon = NULL;
 static XPLMDataRef gWeaponTargH = NULL;
+static XPLMDataRef gGPSDestLat = NULL;
+static XPLMDataRef gGPSDestLon = NULL;
 static XPLMDataRef gWeaponCount = NULL;
 static XPLMDataRef gWeaponType = NULL;
 static XPLMDataRef gWeaponsArmed = NULL;
@@ -62,6 +64,8 @@ void InitializeSimpleLock()
     gWeaponTargLat = XPLMFindDataRef("sim/weapons/targ_lat");
     gWeaponTargLon = XPLMFindDataRef("sim/weapons/targ_lon");
     gWeaponTargH = XPLMFindDataRef("sim/weapons/targ_h");
+    gGPSDestLat = XPLMFindDataRef("sim/cockpit2/radios/indicators/gps_dme_latitude_deg");
+    gGPSDestLon = XPLMFindDataRef("sim/cockpit2/radios/indicators/gps_dme_longitude_deg");
     gWeaponCount = XPLMFindDataRef("sim/weapons/weapon_count");
     gWeaponType = XPLMFindDataRef("sim/weapons/type");
     gWeaponsArmed = XPLMFindDataRef("sim/cockpit/weapons/rockets_armed");
@@ -156,17 +160,49 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
         XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
     }
     
-    if (gGPSLockCommand) {
-        XPLMCommandOnce(gGPSLockCommand);
+    if (gWeaponTargLat && gWeaponTargLon && gWeaponTargH && gWeaponCount) {
+        int weaponCount = XPLMGetDatai(gWeaponCount);
+        
+        float targetLatArray[25] = {0};
+        float targetLonArray[25] = {0};
+        float targetHArray[25] = {0};
+        
+        for (int i = 0; i < weaponCount && i < 25; i++) {
+            targetLatArray[i] = (float)gTargetLat;
+            targetLonArray[i] = (float)gTargetLon;
+            targetHArray[i] = (float)gTargetAlt;
+        }
+        
+        XPLMSetDatavf(gWeaponTargLat, targetLatArray, 0, weaponCount);
+        XPLMSetDatavf(gWeaponTargLon, targetLonArray, 0, weaponCount);
+        XPLMSetDatavf(gWeaponTargH, targetHArray, 0, weaponCount);
         
         char debugMsg[256];
-        snprintf(debugMsg, sizeof(debugMsg), "FLIR: GPS target locked at %.6f°N %.6f°W, Alt: %.0fm (Range: %.0fm)", 
-                gTargetLat, gTargetLon, gTargetAlt, targetRange);
+        snprintf(debugMsg, sizeof(debugMsg), "FLIR: Weapon target arrays set for %d weapons at %.6f°N %.6f°W", 
+                weaponCount, gTargetLat, gTargetLon);
         XPLMDebugString(debugMsg);
-        XPLMDebugString("FLIR: GPS guidance active - use F5 to fire armed weapons\n");
+    }
+    
+    if (gGPSLockCommand) {
+        XPLMCommandOnce(gGPSLockCommand);
+        XPLMDebugString("FLIR: GPS lock command executed\n");
     } else {
         XPLMDebugString("FLIR: GPS lock command not available\n");
     }
+    
+    if (gGPSDestLat && gGPSDestLon) {
+        double currentGPSLat = XPLMGetDatad(gGPSDestLat);
+        double currentGPSLon = XPLMGetDatad(gGPSDestLon);
+        char gpsMsg[256];
+        snprintf(gpsMsg, sizeof(gpsMsg), "FLIR: GPS destination now: %.6f°N %.6f°W\n", currentGPSLat, currentGPSLon);
+        XPLMDebugString(gpsMsg);
+    }
+    
+    char debugMsg[256];
+    snprintf(debugMsg, sizeof(debugMsg), "FLIR: Target designated at %.6f°N %.6f°W, Alt: %.0fm (Range: %.0fm)", 
+            gTargetLat, gTargetLon, gTargetAlt, targetRange);
+    XPLMDebugString(debugMsg);
+    XPLMDebugString("FLIR: GPS guidance should be active - use F5 to fire armed weapons\n");
 }
 
 void FireWeaponAtTarget()

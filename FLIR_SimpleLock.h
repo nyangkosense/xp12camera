@@ -23,6 +23,7 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
 void FireWeaponAtTarget();
 int IsTargetDesignated();
 void LogWeaponSystemStatus();
+void TryAlternativeGPSMethods();
 
 #ifdef __cplusplus
 }
