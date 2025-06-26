@@ -39,6 +39,7 @@ static XPLMHotKeyID gTiltUpKey = NULL;
 static XPLMHotKeyID gTiltDownKey = NULL;
 static XPLMHotKeyID gThermalToggleKey = NULL;
 static XPLMHotKeyID gFocusLockKey = NULL;
+static XPLMHotKeyID gWeaponFireKey = NULL;
 
 static XPLMDataRef gPlaneX = NULL;
 static XPLMDataRef gPlaneY = NULL;
@@ -67,6 +68,7 @@ static void TiltUpCallback(void* inRefcon);
 static void TiltDownCallback(void* inRefcon);
 static void ThermalToggleCallback(void* inRefcon);
 static void FocusLockCallback(void* inRefcon);
+static void WeaponFireCallback(void* inRefcon);
 static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosingControl, void* inRefcon);
 static int DrawThermalOverlay(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon);
 static void DrawRealisticThermalOverlay(void);
@@ -96,6 +98,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gTiltDownKey = XPLMRegisterHotKey(XPLM_VK_DOWN, xplm_DownFlag, "FLIR Tilt Down", TiltDownCallback, NULL);
     gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag, "FLIR Visual Effects Toggle", ThermalToggleCallback, NULL);
     gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "FLIR Focus/Lock Target", FocusLockCallback, NULL);
+    gWeaponFireKey = XPLMRegisterHotKey(XPLM_VK_ENTER, xplm_DownFlag, "FLIR Fire Weapon at Target", WeaponFireCallback, NULL);
 
     return 1;
 }
@@ -110,6 +113,7 @@ PLUGIN_API void XPluginStop(void)
     if (gTiltDownKey) XPLMUnregisterHotKey(gTiltDownKey);
     if (gThermalToggleKey) XPLMUnregisterHotKey(gThermalToggleKey);
     if (gFocusLockKey) XPLMUnregisterHotKey(gFocusLockKey);
+    if (gWeaponFireKey) XPLMUnregisterHotKey(gWeaponFireKey);
 
     if (gCameraActive) {
         XPLMDontControlCamera();
@@ -230,9 +234,23 @@ static void FocusLockCallback(void* inRefcon)
     if (gCameraActive) {
         if (!IsSimpleLockActive()) {
             LockCurrentDirection(gCameraPan, gCameraTilt);
+            
+            float planeX = gPlaneX ? XPLMGetDataf(gPlaneX) : 0.0f;
+            float planeY = gPlaneY ? XPLMGetDataf(gPlaneY) : 0.0f;
+            float planeZ = gPlaneZ ? XPLMGetDataf(gPlaneZ) : 0.0f;
+            float planeHeading = gPlaneHeading ? XPLMGetDataf(gPlaneHeading) : 0.0f;
+            
+            DesignateTarget(planeX, planeY, planeZ, planeHeading, gCameraPan, gCameraTilt);
         } else {
             DisableSimpleLock();
         }
+    }
+}
+
+static void WeaponFireCallback(void* inRefcon)
+{
+    if (gCameraActive && IsTargetDesignated()) {
+        FireWeaponAtTarget();
     }
 }
  
@@ -330,8 +348,10 @@ static void DrawRealisticThermalOverlay(void)
     float centerX = screenWidth / 2.0f;
     float centerY = screenHeight / 2.0f;
     
-    if (IsSimpleLockActive()) {
+    if (IsSimpleLockActive() && IsTargetDesignated()) {
         glColor4f(1.0f, 0.0f, 0.0f, 0.9f);
+    } else if (IsSimpleLockActive()) {
+        glColor4f(1.0f, 0.5f, 0.0f, 0.9f);
     } else {
         glColor4f(0.0f, 1.0f, 0.0f, 0.9f);
     }
