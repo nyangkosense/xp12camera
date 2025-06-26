@@ -24,6 +24,9 @@ void FireWeaponAtTarget();
 int IsTargetDesignated();
 void LogWeaponSystemStatus();
 void TryAlternativeGPSMethods();
+void StartActiveGuidance();
+void StopActiveGuidance();
+float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
 
 #ifdef __cplusplus
 }

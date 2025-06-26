@@ -119,6 +119,8 @@ PLUGIN_API void XPluginStop(void)
         XPLMDontControlCamera();
         gCameraActive = 0;
     }
+    
+    StopActiveGuidance();
 }
 PLUGIN_API void XPluginDisable(void) { }
 PLUGIN_API int XPluginEnable(void) { return 1; }

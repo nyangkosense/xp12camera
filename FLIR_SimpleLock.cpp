@@ -17,6 +17,7 @@
 #include "XPLMDataAccess.h"
 #include "XPLMUtilities.h"
 #include "XPLMProcessing.h"
+#include "XPLMGraphics.h"
 #include "FLIR_SimpleLock.h"
 
 static int gLockActive = 0;
@@ -48,6 +49,20 @@ static XPLMDataRef gMissilesArmed = NULL;
 static XPLMDataRef gBombsArmed = NULL;
 static XPLMDataRef gGunsArmed = NULL;
 
+static XPLMDataRef gWeaponX = NULL;
+static XPLMDataRef gWeaponY = NULL;
+static XPLMDataRef gWeaponZ = NULL;
+static XPLMDataRef gWeaponVX = NULL;
+static XPLMDataRef gWeaponVY = NULL;
+static XPLMDataRef gWeaponVZ = NULL;
+static XPLMDataRef gWeaponThecon = NULL;
+static XPLMDataRef gWeaponSFrn = NULL;
+static XPLMDataRef gWeaponSSid = NULL;
+static XPLMDataRef gWeaponSTop = NULL;
+
+static int gActiveGuidance = 0;
+static XPLMFlightLoopID gGuidanceFlightLoop = NULL;
+
 void InitializeSimpleLock()
 {
     gLockActive = 0;
@@ -72,6 +87,17 @@ void InitializeSimpleLock()
     gMissilesArmed = XPLMFindDataRef("sim/cockpit/weapons/missiles_armed");
     gBombsArmed = XPLMFindDataRef("sim/cockpit/weapons/bombs_armed");
     gGunsArmed = XPLMFindDataRef("sim/cockpit/weapons/guns_armed");
+    
+    gWeaponX = XPLMFindDataRef("sim/weapons/x");
+    gWeaponY = XPLMFindDataRef("sim/weapons/y");
+    gWeaponZ = XPLMFindDataRef("sim/weapons/z");
+    gWeaponVX = XPLMFindDataRef("sim/weapons/vx");
+    gWeaponVY = XPLMFindDataRef("sim/weapons/vy");
+    gWeaponVZ = XPLMFindDataRef("sim/weapons/vz");
+    gWeaponThecon = XPLMFindDataRef("sim/weapons/the_con");
+    gWeaponSFrn = XPLMFindDataRef("sim/weapons/s_frn");
+    gWeaponSSid = XPLMFindDataRef("sim/weapons/s_sid");
+    gWeaponSTop = XPLMFindDataRef("sim/weapons/s_top");
     
     LogWeaponSystemStatus();
 }
@@ -202,7 +228,7 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     snprintf(debugMsg, sizeof(debugMsg), "FLIR: Target designated at %.6f°N %.6f°W, Alt: %.0fm (Range: %.0fm)", 
             gTargetLat, gTargetLon, gTargetAlt, targetRange);
     XPLMDebugString(debugMsg);
-    XPLMDebugString("FLIR: GPS guidance should be active - use F5 to fire armed weapons\n");
+    XPLMDebugString("FLIR: Active guidance ready - use F5 to fire, Enter to start guidance\n");
 }
 
 void FireWeaponAtTarget()
@@ -228,9 +254,13 @@ void FireWeaponAtTarget()
     }
     
     char fireMsg[256];
-    snprintf(fireMsg, sizeof(fireMsg), "FLIR: Target ready at %.6f°N %.6f°W - use F5 to fire armed weapons\n", 
+    snprintf(fireMsg, sizeof(fireMsg), "FLIR: Starting active guidance to %.6f°N %.6f°W\n", 
             gTargetLat, gTargetLon);
     XPLMDebugString(fireMsg);
+    
+    StartActiveGuidance();
+    
+    XPLMDebugString("FLIR: Fire weapons with F5 - active guidance will steer them to target\n");
     XPLMDebugString("FLIR: ===================================\n");
 }
 
@@ -324,4 +354,110 @@ void LogWeaponSystemStatus()
     }
     
     XPLMDebugString("FLIR: ================================\n");
+}
+
+void StartActiveGuidance()
+{
+    if (gActiveGuidance || !gTargetDesignated) {
+        return;
+    }
+    
+    gActiveGuidance = 1;
+    
+    if (!gGuidanceFlightLoop) {
+        XPLMCreateFlightLoop_t flightLoopParams;
+        flightLoopParams.structSize = sizeof(XPLMCreateFlightLoop_t);
+        flightLoopParams.phase = xplm_FlightLoop_Phase_AfterFlightModel;
+        flightLoopParams.callbackFunc = GuidanceFlightLoopCallback;
+        flightLoopParams.refcon = NULL;
+        
+        gGuidanceFlightLoop = XPLMCreateFlightLoop(&flightLoopParams);
+    }
+    
+    if (gGuidanceFlightLoop) {
+        XPLMScheduleFlightLoop(gGuidanceFlightLoop, 0.1f, 1);
+        XPLMDebugString("FLIR: Active weapon guidance started\n");
+    }
+}
+
+void StopActiveGuidance()
+{
+    if (!gActiveGuidance) {
+        return;
+    }
+    
+    gActiveGuidance = 0;
+    
+    if (gGuidanceFlightLoop) {
+        XPLMScheduleFlightLoop(gGuidanceFlightLoop, 0, 0);
+        XPLMDebugString("FLIR: Active weapon guidance stopped\n");
+    }
+}
+
+float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon)
+{
+    if (!gActiveGuidance || !gTargetDesignated) {
+        return 0;
+    }
+    
+    if (!gWeaponX || !gWeaponY || !gWeaponZ || !gWeaponCount) {
+        return 0.1f;
+    }
+    
+    int weaponCount = XPLMGetDatai(gWeaponCount);
+    if (weaponCount <= 0) {
+        return 0.1f;
+    }
+    
+    float weaponX[25] = {0};
+    float weaponY[25] = {0};
+    float weaponZ[25] = {0};
+    
+    XPLMGetDatavf(gWeaponX, weaponX, 0, weaponCount);
+    XPLMGetDatavf(gWeaponY, weaponY, 0, weaponCount);
+    XPLMGetDatavf(gWeaponZ, weaponZ, 0, weaponCount);
+    
+    double targetLat = gTargetLat;
+    double targetLon = gTargetLon;
+    double targetAlt = gTargetAlt;
+    
+    float steeringFrn[25] = {0};
+    float steeringSid[25] = {0};
+    float steeringTop[25] = {0};
+    
+    for (int i = 0; i < weaponCount && i < 25; i++) {
+        if (weaponX[i] == 0 && weaponY[i] == 0 && weaponZ[i] == 0) {
+            continue;
+        }
+        
+        double weaponLat, weaponLon;
+        XPLMLocalToWorld(weaponX[i], weaponY[i], weaponZ[i], &weaponLat, &weaponLon, NULL);
+        
+        double deltaLat = targetLat - weaponLat;
+        double deltaLon = targetLon - weaponLon;
+        double deltaAlt = targetAlt - weaponY[i];
+        
+        double bearing = atan2(deltaLon, deltaLat) * 180.0 / M_PI;
+        double distance = sqrt(deltaLat * deltaLat + deltaLon * deltaLon) * 111320.0;
+        double elevation = atan2(deltaAlt, distance) * 180.0 / M_PI;
+        
+        steeringFrn[i] = (float)(bearing * 0.1);
+        steeringSid[i] = (float)(bearing * 0.1);
+        steeringTop[i] = (float)(elevation * 0.1);
+        
+        if (i == 0) {
+            char guidanceMsg[256];
+            snprintf(guidanceMsg, sizeof(guidanceMsg), "FLIR: Weapon[%d] at %.6f,%.6f -> target %.6f,%.6f (dist: %.0fm, bearing: %.1f°, elev: %.1f°)\n", 
+                    i, weaponLat, weaponLon, targetLat, targetLon, distance, bearing, elevation);
+            XPLMDebugString(guidanceMsg);
+        }
+    }
+    
+    if (gWeaponSFrn && gWeaponSSid && gWeaponSTop) {
+        XPLMSetDatavf(gWeaponSFrn, steeringFrn, 0, weaponCount);
+        XPLMSetDatavf(gWeaponSSid, steeringSid, 0, weaponCount);
+        XPLMSetDatavf(gWeaponSTop, steeringTop, 0, weaponCount);
+    }
+    
+    return 0.1f;
 }
