@@ -1,0 +1,366 @@
+/* Military Dark Theme */
+:root {
+    --primary-bg: #0d1117;
+    --secondary-bg: #161b22;
+    --tertiary-bg: #21262d;
+    --accent-green: #00ff41;
+    --military-blue: #1e3a5f;
+    --warning-amber: #ffb000;
+    --danger-red: #ff4444;
+    --text-primary: #f0f6fc;
+    --text-secondary: #8b949e;
+    --border-color: #30363d;
+    --hover-bg: #292e36;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--primary-bg);
+    color: var(--text-primary);
+    font-family: 'Courier New', 'Monaco', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+}
+
+.mission-interface {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+.mission-header {
+    background: linear-gradient(135deg, var(--secondary-bg), var(--tertiary-bg));
+    border-bottom: 2px solid var(--accent-green);
+    padding: 15px;
+    text-align: center;
+    position: relative;
+}
+
+.mission-header h1 {
+    color: var(--accent-green);
+    font-size: 24px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+    margin-bottom: 5px;
+}
+
+.classification {
+    color: var(--warning-amber);
+    font-size: 12px;
+    letter-spacing: 2px;
+    font-weight: bold;
+}
+
+/* Main Container */
+.main-container {
+    display: flex;
+    flex: 1;
+    height: calc(100vh - 80px);
+}
+
+/* Left Panel - Configuration */
+.config-panel {
+    width: 300px;
+    background: var(--secondary-bg);
+    border-right: 1px solid var(--border-color);
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.panel-section {
+    margin-bottom: 25px;
+}
+
+.panel-section h3 {
+    color: var(--accent-green);
+    font-size: 12px;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 5px;
+}
+
+.military-select {
+    width: 100%;
+    background: var(--tertiary-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 10px;
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 3px;
+    transition: all 0.3s ease;
+}
+
+.military-select:focus {
+    outline: none;
+    border-color: var(--accent-green);
+    box-shadow: 0 0 5px rgba(0, 255, 65, 0.3);
+}
+
+.military-select option {
+    background: var(--tertiary-bg);
+    color: var(--text-primary);
+}
+
+.airbase-info {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--tertiary-bg);
+    border-radius: 3px;
+    font-size: 11px;
+    line-height: 1.4;
+    display: none;
+}
+
+.airbase-info.show {
+    display: block;
+}
+
+.airbase-info .info-item {
+    margin-bottom: 5px;
+}
+
+.airbase-info .info-label {
+    color: var(--text-secondary);
+    display: inline-block;
+    width: 80px;
+}
+
+.generate-btn, .export-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--military-blue), var(--accent-green));
+    border: none;
+    color: var(--text-primary);
+    padding: 15px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+}
+
+.generate-btn:hover, .export-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 255, 65, 0.3);
+}
+
+/* Center Panel - Map */
+.map-panel {
+    flex: 1;
+    position: relative;
+    background: var(--tertiary-bg);
+}
+
+.world-map {
+    width: 100%;
+    height: 100%;
+}
+
+.map-legend {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(33, 38, 45, 0.9);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 15px;
+    backdrop-filter: blur(5px);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 11px;
+}
+
+.legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.legend-color.airbase {
+    background: var(--accent-green);
+    box-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+}
+
+.legend-color.patrol-zone {
+    background: var(--military-blue);
+    box-shadow: 0 0 5px rgba(30, 58, 95, 0.5);
+}
+
+/* Right Panel - Briefing */
+.briefing-panel {
+    width: 400px;
+    background: var(--secondary-bg);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.briefing-display {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.briefing-placeholder h3 {
+    color: var(--accent-green);
+    margin-bottom: 15px;
+    text-align: center;
+    letter-spacing: 1px;
+}
+
+.briefing-placeholder p {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.flir-info {
+    background: var(--tertiary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 15px;
+    margin-top: 20px;
+}
+
+.flir-info h4 {
+    color: var(--warning-amber);
+    margin-bottom: 10px;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+.flir-info ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.flir-info li {
+    margin-bottom: 5px;
+    color: var(--text-secondary);
+}
+
+.flir-info li::before {
+    content: "▶ ";
+    color: var(--accent-green);
+    margin-right: 5px;
+}
+
+.export-btn {
+    margin: 20px;
+    margin-top: 0;
+}
+
+/* Mission Briefing Styles */
+.mission-briefing {
+    font-family: 'Courier New', monospace;
+    white-space: pre-line;
+    color: var(--text-primary);
+}
+
+.mission-briefing .briefing-header {
+    color: var(--accent-green);
+    text-align: center;
+    margin-bottom: 20px;
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.3);
+}
+
+.mission-briefing .section-header {
+    color: var(--warning-amber);
+    font-weight: bold;
+    margin: 15px 0 5px 0;
+}
+
+.mission-briefing .objective-item {
+    color: var(--text-secondary);
+    margin-left: 15px;
+}
+
+.mission-briefing .objective-item::before {
+    content: "▶ ";
+    color: var(--accent-green);
+}
+
+.mission-briefing .coordinates {
+    color: var(--military-blue);
+    background: var(--tertiary-bg);
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-weight: bold;
+}
+
+.mission-briefing .frequency {
+    color: var(--accent-green);
+    font-weight: bold;
+}
+
+.mission-briefing .auth-code {
+    color: var(--danger-red);
+    font-weight: bold;
+    background: var(--tertiary-bg);
+    padding: 2px 6px;
+    border-radius: 2px;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .config-panel {
+        width: 250px;
+    }
+    
+    .briefing-panel {
+        width: 350px;
+    }
+}
+
+@media (max-width: 900px) {
+    .main-container {
+        flex-direction: column;
+    }
+    
+    .config-panel,
+    .briefing-panel {
+        width: 100%;
+        height: 200px;
+    }
+    
+    .map-panel {
+        height: calc(100vh - 480px);
+    }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--primary-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-green);
+}
