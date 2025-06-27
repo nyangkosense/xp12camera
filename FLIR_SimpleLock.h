@@ -21,6 +21,7 @@ void GetSimpleLockStatus(char* statusBuffer, int bufferSize);
 void SetTargetCoordinates(double lat, double lon, double alt);
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle);
 void DesignateTargetFallback(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle);
+void CalculateRayGroundIntersection(float camX, float camY, float camZ, float heading, float pitch, float* outX, float* outY, float* outZ);
 void FireWeaponAtTarget();
 int IsTargetDesignated();
 void LogWeaponSystemStatus();

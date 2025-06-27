@@ -163,9 +163,50 @@ void SetTargetCoordinates(double lat, double lon, double alt)
     gTargetDesignated = 0;
 }
 
+void CalculateRayGroundIntersection(float camX, float camY, float camZ, float heading, float pitch, float* outX, float* outY, float* outZ)
+{
+    // Convert angles to radians
+    float headingRad = heading * M_PI / 180.0f;
+    float pitchRad = pitch * M_PI / 180.0f;
+    
+    // Calculate ray direction vector from camera center
+    float rayDirX = sin(headingRad) * cos(pitchRad);
+    float rayDirY = sin(pitchRad);
+    float rayDirZ = cos(headingRad) * cos(pitchRad);
+    
+    // Find intersection with ground plane (Y = 0)
+    // Ray equation: P = camPos + t * rayDir
+    // Ground plane: Y = 0
+    // Solve: camY + t * rayDirY = 0
+    
+    if (fabs(rayDirY) < 0.001f) {
+        // Ray is nearly horizontal - use maximum range
+        float maxRange = 10000.0f;
+        *outX = camX + rayDirX * maxRange;
+        *outY = 0.0f;
+        *outZ = camZ + rayDirZ * maxRange;
+    } else {
+        // Calculate intersection parameter
+        float t = -camY / rayDirY;
+        
+        // Calculate intersection point
+        *outX = camX + rayDirX * t;
+        *outY = 0.0f;  // Ground level
+        *outZ = camZ + rayDirZ * t;
+    }
+    
+    // Clamp to reasonable range
+    float distance = sqrt((*outX - camX) * (*outX - camX) + (*outZ - camZ) * (*outZ - camZ));
+    if (distance > 20000.0f) {
+        float scale = 20000.0f / distance;
+        *outX = camX + ((*outX - camX) * scale);
+        *outZ = camZ + ((*outZ - camZ) * scale);
+    }
+}
+
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
 {
-    // Use X-Plane's actual camera position and angles instead of calculated ones
+    // Use ray casting method with X-Plane's camera data
     if (!gCameraX || !gCameraY || !gCameraZ || !gCameraHeading || !gCameraPitch) {
         XPLMDebugString("FLIR: Camera datarefs not available - using fallback method\n");
         DesignateTargetFallback(planeX, planeY, planeZ, planeHeading, panAngle, tiltAngle);
@@ -179,26 +220,13 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     float cameraHeading = XPLMGetDataf(gCameraHeading);
     float cameraPitch = XPLMGetDataf(gCameraPitch);
     
-    // Convert angles to radians
-    float headingRad = cameraHeading * M_PI / 180.0f;
-    float pitchRad = cameraPitch * M_PI / 180.0f;
+    // Use ray casting to find exact ground intersection
+    float targetX, targetY, targetZ;
+    CalculateRayGroundIntersection(cameraX, cameraY, cameraZ, cameraHeading, cameraPitch, &targetX, &targetY, &targetZ);
     
-    // Calculate ground intersection distance based on camera pitch
-    double targetRange = 5000.0; // Default range
-    if (cameraPitch < -5.0f && cameraY > 100.0f) {
-        targetRange = cameraY / fabs(sin(pitchRad)); // Ground intersection
-        if (targetRange > 20000.0) targetRange = 20000.0;
-        if (targetRange < 500.0) targetRange = 500.0;
-    }
-    
-    // Calculate target coordinates using X-Plane's camera direction
-    double deltaX = targetRange * sin(headingRad) * cos(pitchRad);
-    double deltaZ = targetRange * cos(headingRad) * cos(pitchRad);
-    double deltaY = targetRange * sin(pitchRad); // Negative for downward pitch
-    
-    gTargetX = cameraX + (float)deltaX;
-    gTargetY = cameraY + (float)deltaY; // Should hit ground level
-    gTargetZ = cameraZ + (float)deltaZ;
+    gTargetX = targetX;
+    gTargetY = targetY;
+    gTargetZ = targetZ;
     gTargetDesignated = 1;
     
     // Auto-arm weapons
@@ -209,21 +237,24 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
         XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
     }
     
-    // Log target designation with X-Plane camera data
+    // Calculate distance for logging
+    float distance = sqrt((targetX - cameraX) * (targetX - cameraX) + 
+                         (targetY - cameraY) * (targetY - cameraY) + 
+                         (targetZ - cameraZ) * (targetZ - cameraZ));
+    
+    // Log ray casting targeting
     char debugMsg[512];
     snprintf(debugMsg, sizeof(debugMsg), 
-        "FLIR: X-PLANE CAMERA METHOD\n"
+        "FLIR: RAY CASTING METHOD\n"
         "FLIR: CAMERA POS - (%.0f,%.0f,%.0f)\n"
         "FLIR: CAMERA ANGLES - Heading:%.1f° Pitch:%.1f°\n"
-        "FLIR: RANGE - Calculated:%.0fm (Pitch-based ground intersect)\n"
-        "FLIR: VECTOR - DeltaX:%.0f DeltaY:%.0f DeltaZ:%.0f\n"
-        "FLIR: TARGET - Final:(%.0f,%.0f,%.0f)\n"
-        "FLIR: CROSSHAIR → Using X-Plane's exact camera direction!\n", 
+        "FLIR: RAY GROUND HIT - (%.0f,%.0f,%.0f)\n"
+        "FLIR: DISTANCE - %.0fm\n"
+        "FLIR: CROSSHAIR → Ray casting to exact ground intersection!\n", 
         cameraX, cameraY, cameraZ,
         cameraHeading, cameraPitch,
-        targetRange,
-        (float)deltaX, (float)deltaY, (float)deltaZ,
-        gTargetX, gTargetY, gTargetZ);
+        gTargetX, gTargetY, gTargetZ,
+        distance);
     XPLMDebugString(debugMsg);
     
     StartActiveGuidance();
