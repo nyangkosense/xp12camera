@@ -450,12 +450,44 @@ float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTi
         
         double distance = sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
         
-        if (distance > 1.0) {
-            double steering_strength = 0.5;
+        if (distance > 50.0) {  // Minimum distance threshold
+            // Use proven precision guidance parameters
+            float proportionalGain = 1.0f;
+            float dampingFactor = 0.85f;
+            float maxCorrectionSpeed = 15.0f;
             
-            newVX[i] = currentVX[i] + (float)(deltaX / distance * steering_strength);
-            newVY[i] = currentVY[i] + (float)(deltaY / distance * steering_strength);
-            newVZ[i] = currentVZ[i] + (float)(deltaZ / distance * steering_strength);
+            // Normalize direction to target
+            float dirX = (float)(deltaX / distance);
+            float dirY = (float)(deltaY / distance);
+            float dirZ = (float)(deltaZ / distance);
+            
+            // Speed control based on distance
+            float desiredSpeed = fmin(distance * 0.08f, 120.0f); // Max 120 m/s
+            if (desiredSpeed < 15.0f) desiredSpeed = 15.0f;      // Min 15 m/s
+            
+            // Calculate desired velocity
+            float desiredVX = dirX * desiredSpeed;
+            float desiredVY = dirY * desiredSpeed;
+            float desiredVZ = dirZ * desiredSpeed;
+            
+            // Calculate correction needed
+            float correctionX = (desiredVX - currentVX[i]) * proportionalGain;
+            float correctionY = (desiredVY - currentVY[i]) * proportionalGain;
+            float correctionZ = (desiredVZ - currentVZ[i]) * proportionalGain;
+            
+            // Limit correction magnitude for stability
+            float correctionMag = sqrt(correctionX*correctionX + correctionY*correctionY + correctionZ*correctionZ);
+            if (correctionMag > maxCorrectionSpeed) {
+                float scale = maxCorrectionSpeed / correctionMag;
+                correctionX *= scale;
+                correctionY *= scale;
+                correctionZ *= scale;
+            }
+            
+            // Apply smooth correction with damping
+            newVX[i] = (currentVX[i] + correctionX) * dampingFactor;
+            newVY[i] = (currentVY[i] + correctionY) * dampingFactor;
+            newVZ[i] = (currentVZ[i] + correctionZ) * dampingFactor;
             
             double bearing = atan2(deltaX, deltaZ) * 180.0 / M_PI;
             double elevation = atan2(deltaY, sqrt(deltaX * deltaX + deltaZ * deltaZ)) * 180.0 / M_PI;
