@@ -67,8 +67,12 @@ static XPLMFlightLoopID gResearchFlightLoop = NULL;
 static int gAutoTestActive = 0;
 static int gAutoTestDatarefIndex = 0;
 static float gAutoTestTimer = 0.0f;
-static float gAutoTestInterval = 3.0f; // Test each dataref for 3 seconds
-static float gAutoTestValues[] = {0.0f, 500.0f, -500.0f, 1000.0f, -1000.0f, 100.0f, -100.0f};
+static float gAutoTestInterval = 1.0f; // Test each dataref for 1 second (much faster)
+static float gAutoTestValues[] = {0.0f, 500.0f, -500.0f, 1000.0f, -1000.0f}; // Reduced to key values
+
+// Weapon mode control
+static XPLMDataRef gWeaponMode = NULL;
+static XPLMDataRef gWeaponRadarOn = NULL;
 
 // Function declarations
 static void ActivateResearchCallback(void* inRefcon);
@@ -124,6 +128,10 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gWeaponQrad = XPLMFindDataRef("sim/weapons/Qrad");
     gWeaponRrad = XPLMFindDataRef("sim/weapons/Rrad");
     gWeaponRuddRat = XPLMFindDataRef("sim/weapons/rudd_rat");
+    
+    // Weapon mode control datarefs
+    gWeaponMode = XPLMFindDataRef("sim/weapons/mode");
+    gWeaponRadarOn = XPLMFindDataRef("sim/weapons/radar_on");
 
     // Register hotkeys
     XPLMRegisterHotKey(XPLM_VK_F10, xplm_DownFlag, "WR: Activate Research", ActivateResearchCallback, NULL);
@@ -255,6 +263,8 @@ static void LogAllWeaponData()
     float distTarg[25] = {0}, distPoint[25] = {0};
     float elevRat[25] = {0}, azimRat[25] = {0};
     int types[25] = {0};
+    int modes[25] = {0};
+    int radarOn[25] = {0};
     
     if (gWeaponX) XPLMGetDatavf(gWeaponX, x, 0, weaponCount);
     if (gWeaponY) XPLMGetDatavf(gWeaponY, y, 0, weaponCount);
@@ -270,12 +280,14 @@ static void LogAllWeaponData()
     if (gWeaponElevRat) XPLMGetDatavf(gWeaponElevRat, elevRat, 0, weaponCount);
     if (gWeaponAzimRat) XPLMGetDatavf(gWeaponAzimRat, azimRat, 0, weaponCount);
     if (gWeaponType) XPLMGetDatavi(gWeaponType, types, 0, weaponCount);
+    if (gWeaponMode) XPLMGetDatavi(gWeaponMode, modes, 0, weaponCount);
+    if (gWeaponRadarOn) XPLMGetDatavi(gWeaponRadarOn, radarOn, 0, weaponCount);
     
     for (int i = 0; i < weaponCount && i < 25; i++) {
         snprintf(msg, sizeof(msg), 
-            "WEAPON RESEARCH: [%d] Type:%d Pos:(%.2f,%.2f,%.2f) Vel:(%.2f,%.2f,%.2f) "
+            "WEAPON RESEARCH: [%d] Type:%d Mode:%d Radar:%d Pos:(%.2f,%.2f,%.2f) Vel:(%.2f,%.2f,%.2f) "
             "Targ:(%.6f,%.6f,%.0f) Dist:(%.0f,%.0f) Elev/Azim:(%.3f,%.3f)\n",
-            i, types[i], x[i], y[i], z[i], vx[i], vy[i], vz[i],
+            i, types[i], modes[i], radarOn[i], x[i], y[i], z[i], vx[i], vy[i], vz[i],
             targLat[i], targLon[i], targH[i], distTarg[i], distPoint[i], elevRat[i], azimRat[i]);
         XPLMDebugString(msg);
     }
@@ -292,7 +304,32 @@ static void StartAutoTestCallback(void* inRefcon)
         gAutoTestActive = 1;
         gAutoTestDatarefIndex = 0;
         gAutoTestTimer = 0.0f;
-        XPLMDebugString("WEAPON RESEARCH: Automatic testing STARTED - cycling through all datarefs with drastic values\n");
+        
+        // Set all weapons to internal radar mode for proper control
+        int weaponCount = gWeaponCount ? XPLMGetDatai(gWeaponCount) : 0;
+        if (weaponCount > 0) {
+            // Set weapon mode to internal radar (mode 1)
+            if (gWeaponMode) {
+                int modeArray[25] = {0};
+                for (int i = 0; i < weaponCount && i < 25; i++) {
+                    modeArray[i] = 1; // 1 = internal radar
+                }
+                XPLMSetDatavi(gWeaponMode, modeArray, 0, weaponCount);
+                XPLMDebugString("WEAPON RESEARCH: Set all weapons to INTERNAL RADAR mode\n");
+            }
+            
+            // Turn on radar
+            if (gWeaponRadarOn) {
+                int radarArray[25] = {0};
+                for (int i = 0; i < weaponCount && i < 25; i++) {
+                    radarArray[i] = 1; // Radar ON
+                }
+                XPLMSetDatavi(gWeaponRadarOn, radarArray, 0, weaponCount);
+                XPLMDebugString("WEAPON RESEARCH: Radar turned ON for all weapons\n");
+            }
+        }
+        
+        XPLMDebugString("WEAPON RESEARCH: FAST automatic testing STARTED - 1 second per dataref\n");
     }
 }
 
@@ -305,14 +342,14 @@ static void AutoTestNextDataref()
     
     gAutoTestDatarefIndex++;
     
-    // Total number of datarefs to test (27 datarefs)
-    if (gAutoTestDatarefIndex >= 27) {
+    // Total number of datarefs to test (31 datarefs including mode and radar_on)
+    if (gAutoTestDatarefIndex >= 31) {
         gAutoTestDatarefIndex = 0;
         XPLMDebugString("WEAPON RESEARCH: Auto test cycle completed, restarting\n");
     }
     
     static int valueIndex = 0;
-    valueIndex = (valueIndex + 1) % 7; // Cycle through test values
+    valueIndex = (valueIndex + 1) % 5; // Cycle through test values (reduced to 5)
     
     float testValue = gAutoTestValues[valueIndex];
     
@@ -331,7 +368,7 @@ static void ApplyTestToDataref(int datarefIndex, float value, int weaponIndex)
         "vx", "vy", "vz", "s_frn", "s_sid", "s_top", "targ_lat", "targ_lon", "targ_h",
         "target_index", "dist_targ", "dist_point", "elev_rat", "azim_rat", "the_con",
         "the", "time_point", "X_body_aero", "Y_body_aero", "Z_body_aero", "psi",
-        "psi_con", "q1", "q2", "q3", "q4", "Qrad", "Rrad", "rudd_rat"
+        "psi_con", "q1", "q2", "q3", "q4", "Qrad", "Rrad", "rudd_rat", "mode", "radar_on"
     };
     
     char msg[256];
@@ -431,6 +468,20 @@ static void ApplyTestToDataref(int datarefIndex, float value, int weaponIndex)
         case 28: // rudd_rat
             if (gWeaponRuddRat) XPLMSetDatavf(gWeaponRuddRat, testArray, weaponIndex, 1);
             break;
+        case 29: // mode
+            if (gWeaponMode) {
+                int intArray[25] = {0};
+                intArray[weaponIndex] = (int)value;
+                XPLMSetDatavi(gWeaponMode, intArray, weaponIndex, 1);
+            }
+            break;
+        case 30: // radar_on
+            if (gWeaponRadarOn) {
+                int intArray[25] = {0};
+                intArray[weaponIndex] = (int)value;
+                XPLMSetDatavi(gWeaponRadarOn, intArray, weaponIndex, 1);
+            }
+            break;
     }
 }
 
@@ -511,8 +562,8 @@ static float ResearchFlightLoopCallback(float inElapsedSinceLastCall, float inEl
         }
     }
     
-    // Log detailed data every 5 seconds
-    if (logCounter % 25 == 0) {
+    // Log detailed data every 2 seconds (faster logging)
+    if (logCounter % 10 == 0) {
         LogAllWeaponData();
     }
     
