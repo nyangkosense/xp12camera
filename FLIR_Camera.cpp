@@ -49,16 +49,22 @@ static XPLMDataRef gPlanePitch = NULL;
 static XPLMDataRef gPlaneRoll = NULL;
 static XPLMDataRef gManipulatorDisabled = NULL;
 
-static int gCameraActive = 0;
+int gCameraActive = 0;
 static int gDrawCallbackRegistered = 0;
 static float gZoomLevel = 1.0f;
-static float gCameraPan = 0.0f;
-static float gCameraTilt = -15.0f;
+float gCameraPan = 0.0f;
+float gCameraTilt = -15.0f;
 static float gCameraHeight = -5.0f;
 static float gCameraDistance = 3.0f;
 static int gLastMouseX = 0;
 static int gLastMouseY = 0;
 static float gMouseSensitivity = 0.2f;
+
+// Dataref callbacks for sharing camera state with other plugins
+static int GetCameraActive(void* inRefcon) { return gCameraActive; }
+static float GetCameraPan(void* inRefcon) { return gCameraPan; }
+static float GetCameraTilt(void* inRefcon) { return gCameraTilt; }
+
 static void ActivateFLIRCallback(void* inRefcon);
 static void ZoomInCallback(void* inRefcon);
 static void ZoomOutCallback(void* inRefcon);
@@ -89,6 +95,11 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 
     InitializeSimpleLock();
     InitializeVisualEffects();
+    
+    // Register datarefs for integration with other plugins
+    XPLMRegisterDataAccessor("flir/camera/active", xplmType_Int, 0, GetCameraActive, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    XPLMRegisterDataAccessor("flir/camera/pan", xplmType_Float, 0, NULL, NULL, GetCameraPan, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    XPLMRegisterDataAccessor("flir/camera/tilt", xplmType_Float, 0, NULL, NULL, GetCameraTilt, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     gActivateKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag, "Activate FLIR Camera", ActivateFLIRCallback, NULL);
     gZoomInKey = XPLMRegisterHotKey(XPLM_VK_EQUAL, xplm_DownFlag, "FLIR Zoom In", ZoomInCallback, NULL);
     gZoomOutKey = XPLMRegisterHotKey(XPLM_VK_MINUS, xplm_DownFlag, "FLIR Zoom Out", ZoomOutCallback, NULL);
