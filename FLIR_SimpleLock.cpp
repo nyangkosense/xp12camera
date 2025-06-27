@@ -32,6 +32,13 @@ static float gTargetZ = 0.0f;
 static XPLMDataRef gLatDataRef = NULL;
 static XPLMDataRef gLonDataRef = NULL;
 static XPLMDataRef gAltDataRef = NULL;
+
+// X-Plane camera datarefs for accurate targeting
+static XPLMDataRef gCameraX = NULL;
+static XPLMDataRef gCameraY = NULL;
+static XPLMDataRef gCameraZ = NULL;
+static XPLMDataRef gCameraHeading = NULL;
+static XPLMDataRef gCameraPitch = NULL;
 static XPLMCommandRef gGPSLockCommand = NULL;
 static XPLMCommandRef gFireWeaponCommand = NULL;
 static XPLMCommandRef gFireAnyArmedCommand = NULL;
@@ -72,6 +79,13 @@ void InitializeSimpleLock()
     gLatDataRef = XPLMFindDataRef("sim/flightmodel/position/latitude");
     gLonDataRef = XPLMFindDataRef("sim/flightmodel/position/longitude");
     gAltDataRef = XPLMFindDataRef("sim/flightmodel/position/elevation");
+    
+    // Initialize X-Plane camera datarefs for accurate targeting
+    gCameraX = XPLMFindDataRef("sim/graphics/view/view_x");
+    gCameraY = XPLMFindDataRef("sim/graphics/view/view_y");
+    gCameraZ = XPLMFindDataRef("sim/graphics/view/view_z");
+    gCameraHeading = XPLMFindDataRef("sim/graphics/view/view_heading");
+    gCameraPitch = XPLMFindDataRef("sim/graphics/view/view_pitch");
     gGPSLockCommand = XPLMFindCommand("sim/weapons/GPS_lock_here");
     gFireWeaponCommand = XPLMFindCommand("sim/weapons/fire_air_to_ground");
     gFireAnyArmedCommand = XPLMFindCommand("sim/weapons/fire_any_armed");
@@ -151,27 +165,40 @@ void SetTargetCoordinates(double lat, double lon, double alt)
 
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
 {
-    // Use the actual camera angles (where user pointed the crosshair)
-    // INVERT pan angle: positive pan should turn LEFT in X-Plane coordinate system
-    float headingRad = (planeHeading - panAngle) * M_PI / 180.0f;
-    float tiltRad = tiltAngle * M_PI / 180.0f;
+    // Use X-Plane's actual camera position and angles instead of calculated ones
+    if (!gCameraX || !gCameraY || !gCameraZ || !gCameraHeading || !gCameraPitch) {
+        XPLMDebugString("FLIR: Camera datarefs not available - using fallback method\n");
+        DesignateTargetFallback(planeX, planeY, planeZ, planeHeading, panAngle, tiltAngle);
+        return;
+    }
     
-    // Calculate ground intersection distance based on actual tilt
+    // Get X-Plane's actual camera data
+    float cameraX = XPLMGetDataf(gCameraX);
+    float cameraY = XPLMGetDataf(gCameraY);
+    float cameraZ = XPLMGetDataf(gCameraZ);
+    float cameraHeading = XPLMGetDataf(gCameraHeading);
+    float cameraPitch = XPLMGetDataf(gCameraPitch);
+    
+    // Convert angles to radians
+    float headingRad = cameraHeading * M_PI / 180.0f;
+    float pitchRad = cameraPitch * M_PI / 180.0f;
+    
+    // Calculate ground intersection distance based on camera pitch
     double targetRange = 5000.0; // Default range
-    if (tiltAngle < -5.0f && planeY > 100.0f) {
-        targetRange = planeY / fabs(sin(tiltRad)); // Ground intersection
+    if (cameraPitch < -5.0f && cameraY > 100.0f) {
+        targetRange = cameraY / fabs(sin(pitchRad)); // Ground intersection
         if (targetRange > 20000.0) targetRange = 20000.0;
         if (targetRange < 500.0) targetRange = 500.0;
     }
     
-    // Calculate target coordinates based on actual camera direction
-    double deltaX = targetRange * sin(headingRad) * cos(tiltRad);
-    double deltaZ = targetRange * cos(headingRad) * cos(tiltRad);
-    double deltaY = targetRange * sin(tiltRad); // Negative for downward tilt
+    // Calculate target coordinates using X-Plane's camera direction
+    double deltaX = targetRange * sin(headingRad) * cos(pitchRad);
+    double deltaZ = targetRange * cos(headingRad) * cos(pitchRad);
+    double deltaY = targetRange * sin(pitchRad); // Negative for downward pitch
     
-    gTargetX = planeX + (float)deltaX;
-    gTargetY = planeY + (float)deltaY; // Should hit ground level
-    gTargetZ = planeZ + (float)deltaZ;
+    gTargetX = cameraX + (float)deltaX;
+    gTargetY = cameraY + (float)deltaY; // Should hit ground level
+    gTargetZ = cameraZ + (float)deltaZ;
     gTargetDesignated = 1;
     
     // Auto-arm weapons
@@ -182,23 +209,49 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
         XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
     }
     
-    // Log target designation with detailed calculation info
+    // Log target designation with X-Plane camera data
     char debugMsg[512];
     snprintf(debugMsg, sizeof(debugMsg), 
-        "FLIR: CROSSHAIR ANALYSIS\n"
-        "FLIR: INPUT - Aircraft:(%.0f,%.0f,%.0f) Heading:%.1f°\n"
-        "FLIR: CAMERA - Pan:%.1f° Tilt:%.1f° → Look Direction:%.1f° (INVERTED PAN)\n"
-        "FLIR: RANGE - Calculated:%.0fm (Tilt-based ground intersect)\n"
+        "FLIR: X-PLANE CAMERA METHOD\n"
+        "FLIR: CAMERA POS - (%.0f,%.0f,%.0f)\n"
+        "FLIR: CAMERA ANGLES - Heading:%.1f° Pitch:%.1f°\n"
+        "FLIR: RANGE - Calculated:%.0fm (Pitch-based ground intersect)\n"
         "FLIR: VECTOR - DeltaX:%.0f DeltaY:%.0f DeltaZ:%.0f\n"
         "FLIR: TARGET - Final:(%.0f,%.0f,%.0f)\n"
-        "FLIR: CROSSHAIR → This is where your crosshair should hit!\n", 
-        planeX, planeY, planeZ, planeHeading,
-        panAngle, tiltAngle, (planeHeading - panAngle),
+        "FLIR: CROSSHAIR → Using X-Plane's exact camera direction!\n", 
+        cameraX, cameraY, cameraZ,
+        cameraHeading, cameraPitch,
         targetRange,
         (float)deltaX, (float)deltaY, (float)deltaZ,
         gTargetX, gTargetY, gTargetZ);
     XPLMDebugString(debugMsg);
     
+    StartActiveGuidance();
+}
+
+void DesignateTargetFallback(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
+{
+    // Fallback method using aircraft position and camera angles
+    float headingRad = (planeHeading - panAngle) * M_PI / 180.0f;
+    float tiltRad = tiltAngle * M_PI / 180.0f;
+    
+    double targetRange = 5000.0;
+    if (tiltAngle < -5.0f && planeY > 100.0f) {
+        targetRange = planeY / fabs(sin(tiltRad));
+        if (targetRange > 20000.0) targetRange = 20000.0;
+        if (targetRange < 500.0) targetRange = 500.0;
+    }
+    
+    double deltaX = targetRange * sin(headingRad) * cos(tiltRad);
+    double deltaZ = targetRange * cos(headingRad) * cos(tiltRad);
+    double deltaY = targetRange * sin(tiltRad);
+    
+    gTargetX = planeX + (float)deltaX;
+    gTargetY = planeY + (float)deltaY;
+    gTargetZ = planeZ + (float)deltaZ;
+    gTargetDesignated = 1;
+    
+    XPLMDebugString("FLIR: Using fallback targeting method\n");
     StartActiveGuidance();
 }
 
