@@ -151,26 +151,25 @@ void SetTargetCoordinates(double lat, double lon, double alt)
 
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
 {
-    // Use actual FLIR camera angles (where user pointed crosshair)
+    // Use the actual camera angles (where user pointed the crosshair)
     float headingRad = (planeHeading + panAngle) * M_PI / 180.0f;
     float tiltRad = tiltAngle * M_PI / 180.0f;
     
-    // Calculate target range based on altitude and tilt
+    // Calculate ground intersection distance based on actual tilt
     double targetRange = 5000.0; // Default range
     if (tiltAngle < -5.0f && planeY > 100.0f) {
-        // Calculate ground intersection distance
-        targetRange = planeY / fabs(sin(tiltRad));
-        if (targetRange > 50000.0) targetRange = 50000.0;
+        targetRange = planeY / fabs(sin(tiltRad)); // Ground intersection
+        if (targetRange > 20000.0) targetRange = 20000.0;
         if (targetRange < 500.0) targetRange = 500.0;
     }
     
-    // Calculate target coordinates (ground position where crosshair points)
+    // Calculate target coordinates based on actual camera direction
     double deltaX = targetRange * sin(headingRad) * cos(tiltRad);
     double deltaZ = targetRange * cos(headingRad) * cos(tiltRad);
     double deltaY = targetRange * sin(tiltRad); // Negative for downward tilt
     
     gTargetX = planeX + (float)deltaX;
-    gTargetY = planeY + (float)deltaY; // Should be near ground level
+    gTargetY = planeY + (float)deltaY; // Should hit ground level
     gTargetZ = planeZ + (float)deltaZ;
     gTargetDesignated = 1;
     
@@ -185,10 +184,13 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     // Log target designation with detailed calculation info
     char debugMsg[512];
     snprintf(debugMsg, sizeof(debugMsg), 
-        "FLIR: Target calc - Aircraft:(%.0f,%.0f,%.0f) Heading:%.1f° Pan:%.1f° Tilt:%.1f° Range:%.0fm\n"
-        "FLIR: Target position (%.0f, %.0f, %.0f)\n", 
-        planeX, planeY, planeZ, planeHeading, panAngle, tiltAngle, targetRange,
-        gTargetX, gTargetY, gTargetZ);
+        "FLIR: ANGLES - Heading:%.1f° Pan:%.1f° Tilt:%.1f° → Combined:%.1f°\n"
+        "FLIR: CALC - Range:%.0fm DeltaX:%.0f DeltaY:%.0f DeltaZ:%.0f\n"
+        "FLIR: RESULT - Aircraft:(%.0f,%.0f,%.0f) → Target:(%.0f,%.0f,%.0f)\n", 
+        planeHeading, panAngle, tiltAngle, (planeHeading + panAngle),
+        targetRange, (float)(targetRange * sin(headingRad) * cos(tiltRad)), 
+        (float)(targetRange * sin(tiltRad)), (float)(targetRange * cos(headingRad) * cos(tiltRad)),
+        planeX, planeY, planeZ, gTargetX, gTargetY, gTargetZ);
     XPLMDebugString(debugMsg);
     XPLMDebugString("FLIR: Target ready - fire weapons for precision guidance\n");
     
