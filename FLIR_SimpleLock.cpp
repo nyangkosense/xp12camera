@@ -151,13 +151,14 @@ void SetTargetCoordinates(double lat, double lon, double alt)
 
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
 {
-    // Calculate target in local coordinates (same as working F3 system)
-    float headingRad = (planeHeading + panAngle) * M_PI / 180.0f;
-    float tiltRad = tiltAngle * M_PI / 180.0f;
+    // Target center screen (where crosshair is) instead of mouse-controlled camera angles
+    float headingRad = planeHeading * M_PI / 180.0f;  // Aircraft heading only, ignore pan
+    float tiltRad = -15.0f * M_PI / 180.0f;           // Fixed tilt for center screen
     
-    // Calculate target range based on tilt angle
+    // Calculate target range based on fixed center screen tilt
     double targetRange = 5000.0; // Default 5km
-    if (tiltAngle < -10.0f) {
+    float fixedTilt = -15.0f;
+    if (fixedTilt < -10.0f) {
         targetRange = fabs(planeY / sin(tiltRad));
         if (targetRange > 50000.0) targetRange = 50000.0;
         if (targetRange < 1000.0) targetRange = 1000.0;
@@ -181,10 +182,13 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
         XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
     }
     
-    // Log target designation
-    char debugMsg[256];
-    snprintf(debugMsg, sizeof(debugMsg), "FLIR: Target designated at position (%.0f, %.0f, %.0f) - Range: %.0fm", 
-            gTargetX, gTargetY, gTargetZ, targetRange);
+    // Log target designation with detailed calculation info
+    char debugMsg[512];
+    snprintf(debugMsg, sizeof(debugMsg), 
+        "FLIR: Center screen target - Aircraft:(%.0f,%.0f,%.0f) Heading:%.1f° Fixed_Tilt:-15.0° Range:%.0fm\n"
+        "FLIR: Target position (%.0f, %.0f, %.0f)\n", 
+        planeX, planeY, planeZ, planeHeading, targetRange,
+        gTargetX, gTargetY, gTargetZ);
     XPLMDebugString(debugMsg);
     XPLMDebugString("FLIR: Target ready - fire weapons for precision guidance\n");
     
