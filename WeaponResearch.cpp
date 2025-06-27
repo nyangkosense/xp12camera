@@ -46,6 +46,15 @@ static XPLMDataRef gWeaponTimePoint = NULL;
 static XPLMDataRef gWeaponXBodyAero = NULL;
 static XPLMDataRef gWeaponYBodyAero = NULL;
 static XPLMDataRef gWeaponZBodyAero = NULL;
+static XPLMDataRef gWeaponPsi = NULL;
+static XPLMDataRef gWeaponPsiCon = NULL;
+static XPLMDataRef gWeaponQ1 = NULL;
+static XPLMDataRef gWeaponQ2 = NULL;
+static XPLMDataRef gWeaponQ3 = NULL;
+static XPLMDataRef gWeaponQ4 = NULL;
+static XPLMDataRef gWeaponQrad = NULL;
+static XPLMDataRef gWeaponRrad = NULL;
+static XPLMDataRef gWeaponRuddRat = NULL;
 
 // Test control variables
 static int gResearchActive = 0;
@@ -54,15 +63,25 @@ static float gTestValue = 0.0f;
 static int gCurrentWeaponIndex = 0;
 static XPLMFlightLoopID gResearchFlightLoop = NULL;
 
+// Automatic testing variables
+static int gAutoTestActive = 0;
+static int gAutoTestDatarefIndex = 0;
+static float gAutoTestTimer = 0.0f;
+static float gAutoTestInterval = 3.0f; // Test each dataref for 3 seconds
+static float gAutoTestValues[] = {0.0f, 500.0f, -500.0f, 1000.0f, -1000.0f, 100.0f, -100.0f};
+
 // Function declarations
 static void ActivateResearchCallback(void* inRefcon);
 static void NextTestModeCallback(void* inRefcon);
 static void IncreaseTestValueCallback(void* inRefcon);
 static void DecreaseTestValueCallback(void* inRefcon);
 static void NextWeaponCallback(void* inRefcon);
+static void StartAutoTestCallback(void* inRefcon);
 static float ResearchFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
 static void LogAllWeaponData();
 static void TestCurrentDataref();
+static void AutoTestNextDataref();
+static void ApplyTestToDataref(int datarefIndex, float value, int weaponIndex);
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 {
@@ -96,6 +115,15 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gWeaponXBodyAero = XPLMFindDataRef("sim/weapons/X_body_aero");
     gWeaponYBodyAero = XPLMFindDataRef("sim/weapons/Y_body_aero");
     gWeaponZBodyAero = XPLMFindDataRef("sim/weapons/Z_body_aero");
+    gWeaponPsi = XPLMFindDataRef("sim/weapons/psi");
+    gWeaponPsiCon = XPLMFindDataRef("sim/weapons/psi_con");
+    gWeaponQ1 = XPLMFindDataRef("sim/weapons/q1");
+    gWeaponQ2 = XPLMFindDataRef("sim/weapons/q2");
+    gWeaponQ3 = XPLMFindDataRef("sim/weapons/q3");
+    gWeaponQ4 = XPLMFindDataRef("sim/weapons/q4");
+    gWeaponQrad = XPLMFindDataRef("sim/weapons/Qrad");
+    gWeaponRrad = XPLMFindDataRef("sim/weapons/Rrad");
+    gWeaponRuddRat = XPLMFindDataRef("sim/weapons/rudd_rat");
 
     // Register hotkeys
     XPLMRegisterHotKey(XPLM_VK_F10, xplm_DownFlag, "WR: Activate Research", ActivateResearchCallback, NULL);
@@ -103,9 +131,10 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     XPLMRegisterHotKey(XPLM_VK_F12, xplm_DownFlag, "WR: Next Weapon", NextWeaponCallback, NULL);
     XPLMRegisterHotKey(XPLM_VK_COMMA, xplm_DownFlag, "WR: Decrease Value", DecreaseTestValueCallback, NULL);
     XPLMRegisterHotKey(XPLM_VK_PERIOD, xplm_DownFlag, "WR: Increase Value", IncreaseTestValueCallback, NULL);
+    XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag, "WR: Start Auto Test", StartAutoTestCallback, NULL);
 
     XPLMDebugString("WEAPON RESEARCH: Plugin loaded\n");
-    XPLMDebugString("WEAPON RESEARCH: F10=Start/Stop, F11=Next Test Mode, F12=Next Weapon, ,/. = Dec/Inc Value\n");
+    XPLMDebugString("WEAPON RESEARCH: F9=Auto Test, F10=Start/Stop, F11=Next Test Mode, F12=Next Weapon, ,/. = Dec/Inc Value\n");
 
     return 1;
 }
@@ -254,6 +283,157 @@ static void LogAllWeaponData()
     XPLMDebugString("WEAPON RESEARCH: ================================================\n");
 }
 
+static void StartAutoTestCallback(void* inRefcon)
+{
+    if (gAutoTestActive) {
+        gAutoTestActive = 0;
+        XPLMDebugString("WEAPON RESEARCH: Automatic testing STOPPED\n");
+    } else {
+        gAutoTestActive = 1;
+        gAutoTestDatarefIndex = 0;
+        gAutoTestTimer = 0.0f;
+        XPLMDebugString("WEAPON RESEARCH: Automatic testing STARTED - cycling through all datarefs with drastic values\n");
+    }
+}
+
+static void AutoTestNextDataref()
+{
+    if (!gAutoTestActive) return;
+    
+    int weaponCount = gWeaponCount ? XPLMGetDatai(gWeaponCount) : 0;
+    if (weaponCount == 0) return;
+    
+    gAutoTestDatarefIndex++;
+    
+    // Total number of datarefs to test (27 datarefs)
+    if (gAutoTestDatarefIndex >= 27) {
+        gAutoTestDatarefIndex = 0;
+        XPLMDebugString("WEAPON RESEARCH: Auto test cycle completed, restarting\n");
+    }
+    
+    static int valueIndex = 0;
+    valueIndex = (valueIndex + 1) % 7; // Cycle through test values
+    
+    float testValue = gAutoTestValues[valueIndex];
+    
+    ApplyTestToDataref(gAutoTestDatarefIndex, testValue, 0); // Test on weapon 0
+}
+
+static void ApplyTestToDataref(int datarefIndex, float value, int weaponIndex)
+{
+    int weaponCount = gWeaponCount ? XPLMGetDatai(gWeaponCount) : 0;
+    if (weaponCount == 0 || weaponIndex >= weaponCount) return;
+    
+    float testArray[25] = {0};
+    testArray[weaponIndex] = value;
+    
+    const char* datarefNames[] = {
+        "vx", "vy", "vz", "s_frn", "s_sid", "s_top", "targ_lat", "targ_lon", "targ_h",
+        "target_index", "dist_targ", "dist_point", "elev_rat", "azim_rat", "the_con",
+        "the", "time_point", "X_body_aero", "Y_body_aero", "Z_body_aero", "psi",
+        "psi_con", "q1", "q2", "q3", "q4", "Qrad", "Rrad", "rudd_rat"
+    };
+    
+    char msg[256];
+    snprintf(msg, sizeof(msg), "WEAPON RESEARCH: AUTO TEST - Setting %s[%d] = %.1f\n", 
+            datarefNames[datarefIndex], weaponIndex, value);
+    XPLMDebugString(msg);
+    
+    switch (datarefIndex) {
+        case 0: // vx
+            if (gWeaponVX) XPLMSetDatavf(gWeaponVX, testArray, weaponIndex, 1);
+            break;
+        case 1: // vy
+            if (gWeaponVY) XPLMSetDatavf(gWeaponVY, testArray, weaponIndex, 1);
+            break;
+        case 2: // vz
+            if (gWeaponVZ) XPLMSetDatavf(gWeaponVZ, testArray, weaponIndex, 1);
+            break;
+        case 3: // s_frn
+            if (gWeaponSFrn) XPLMSetDatavf(gWeaponSFrn, testArray, weaponIndex, 1);
+            break;
+        case 4: // s_sid
+            if (gWeaponSSid) XPLMSetDatavf(gWeaponSSid, testArray, weaponIndex, 1);
+            break;
+        case 5: // s_top
+            if (gWeaponSTop) XPLMSetDatavf(gWeaponSTop, testArray, weaponIndex, 1);
+            break;
+        case 6: // targ_lat
+            if (gWeaponTargLat) XPLMSetDatavf(gWeaponTargLat, testArray, weaponIndex, 1);
+            break;
+        case 7: // targ_lon
+            if (gWeaponTargLon) XPLMSetDatavf(gWeaponTargLon, testArray, weaponIndex, 1);
+            break;
+        case 8: // targ_h
+            if (gWeaponTargH) XPLMSetDatavf(gWeaponTargH, testArray, weaponIndex, 1);
+            break;
+        case 9: // target_index
+            if (gWeaponTargetIndex) {
+                int intArray[25] = {0};
+                intArray[weaponIndex] = (int)value;
+                XPLMSetDatavi(gWeaponTargetIndex, intArray, weaponIndex, 1);
+            }
+            break;
+        case 10: // dist_targ
+            if (gWeaponDistTarg) XPLMSetDatavf(gWeaponDistTarg, testArray, weaponIndex, 1);
+            break;
+        case 11: // dist_point
+            if (gWeaponDistPoint) XPLMSetDatavf(gWeaponDistPoint, testArray, weaponIndex, 1);
+            break;
+        case 12: // elev_rat
+            if (gWeaponElevRat) XPLMSetDatavf(gWeaponElevRat, testArray, weaponIndex, 1);
+            break;
+        case 13: // azim_rat
+            if (gWeaponAzimRat) XPLMSetDatavf(gWeaponAzimRat, testArray, weaponIndex, 1);
+            break;
+        case 14: // the_con
+            if (gWeaponThecon) XPLMSetDatavf(gWeaponThecon, testArray, weaponIndex, 1);
+            break;
+        case 15: // the
+            if (gWeaponThe) XPLMSetDatavf(gWeaponThe, testArray, weaponIndex, 1);
+            break;
+        case 16: // time_point
+            if (gWeaponTimePoint) XPLMSetDatavf(gWeaponTimePoint, testArray, weaponIndex, 1);
+            break;
+        case 17: // X_body_aero
+            if (gWeaponXBodyAero) XPLMSetDatavf(gWeaponXBodyAero, testArray, weaponIndex, 1);
+            break;
+        case 18: // Y_body_aero
+            if (gWeaponYBodyAero) XPLMSetDatavf(gWeaponYBodyAero, testArray, weaponIndex, 1);
+            break;
+        case 19: // Z_body_aero
+            if (gWeaponZBodyAero) XPLMSetDatavf(gWeaponZBodyAero, testArray, weaponIndex, 1);
+            break;
+        case 20: // psi
+            if (gWeaponPsi) XPLMSetDatavf(gWeaponPsi, testArray, weaponIndex, 1);
+            break;
+        case 21: // psi_con
+            if (gWeaponPsiCon) XPLMSetDatavf(gWeaponPsiCon, testArray, weaponIndex, 1);
+            break;
+        case 22: // q1
+            if (gWeaponQ1) XPLMSetDatavf(gWeaponQ1, testArray, weaponIndex, 1);
+            break;
+        case 23: // q2
+            if (gWeaponQ2) XPLMSetDatavf(gWeaponQ2, testArray, weaponIndex, 1);
+            break;
+        case 24: // q3
+            if (gWeaponQ3) XPLMSetDatavf(gWeaponQ3, testArray, weaponIndex, 1);
+            break;
+        case 25: // q4
+            if (gWeaponQ4) XPLMSetDatavf(gWeaponQ4, testArray, weaponIndex, 1);
+            break;
+        case 26: // Qrad
+            if (gWeaponQrad) XPLMSetDatavf(gWeaponQrad, testArray, weaponIndex, 1);
+            break;
+        case 27: // Rrad
+            if (gWeaponRrad) XPLMSetDatavf(gWeaponRrad, testArray, weaponIndex, 1);
+            break;
+        case 28: // rudd_rat
+            if (gWeaponRuddRat) XPLMSetDatavf(gWeaponRuddRat, testArray, weaponIndex, 1);
+            break;
+    }
+}
+
 static void TestCurrentDataref()
 {
     if (!gResearchActive) return;
@@ -320,6 +500,16 @@ static float ResearchFlightLoopCallback(float inElapsedSinceLastCall, float inEl
     
     static int logCounter = 0;
     logCounter++;
+    
+    // Handle automatic testing
+    if (gAutoTestActive) {
+        gAutoTestTimer += inElapsedSinceLastCall;
+        
+        if (gAutoTestTimer >= gAutoTestInterval) {
+            gAutoTestTimer = 0.0f;
+            AutoTestNextDataref();
+        }
+    }
     
     // Log detailed data every 5 seconds
     if (logCounter % 25 == 0) {
