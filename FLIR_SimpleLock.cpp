@@ -229,13 +229,16 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     gTargetZ = targetZ;
     gTargetDesignated = 1;
     
-    // Auto-arm weapons
+    // Auto-arm weapons - TEMPORARILY DISABLED FOR DEBUGGING
+    /*
     if (gMissilesArmed && gBombsArmed && gWeaponsArmed) {
         XPLMSetDatai(gMissilesArmed, 1);
         XPLMSetDatai(gBombsArmed, 1);
         XPLMSetDatai(gWeaponsArmed, 1);
         XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
     }
+    */
+    XPLMDebugString("FLIR: Auto-arming disabled for debugging\n");
     
     // Calculate distance for logging
     float distance = sqrt((targetX - cameraX) * (targetX - cameraX) + 
