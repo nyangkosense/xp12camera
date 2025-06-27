@@ -184,15 +184,19 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     // Log target designation with detailed calculation info
     char debugMsg[512];
     snprintf(debugMsg, sizeof(debugMsg), 
-        "FLIR: ANGLES - Heading:%.1f° Pan:%.1f° Tilt:%.1f° → Combined:%.1f°\n"
-        "FLIR: CALC - Range:%.0fm DeltaX:%.0f DeltaY:%.0f DeltaZ:%.0f\n"
-        "FLIR: RESULT - Aircraft:(%.0f,%.0f,%.0f) → Target:(%.0f,%.0f,%.0f)\n", 
-        planeHeading, panAngle, tiltAngle, (planeHeading + panAngle),
-        targetRange, (float)(targetRange * sin(headingRad) * cos(tiltRad)), 
-        (float)(targetRange * sin(tiltRad)), (float)(targetRange * cos(headingRad) * cos(tiltRad)),
-        planeX, planeY, planeZ, gTargetX, gTargetY, gTargetZ);
+        "FLIR: CROSSHAIR ANALYSIS\n"
+        "FLIR: INPUT - Aircraft:(%.0f,%.0f,%.0f) Heading:%.1f°\n"
+        "FLIR: CAMERA - Pan:%.1f° Tilt:%.1f° → Look Direction:%.1f°\n"
+        "FLIR: RANGE - Calculated:%.0fm (Tilt-based ground intersect)\n"
+        "FLIR: VECTOR - DeltaX:%.0f DeltaY:%.0f DeltaZ:%.0f\n"
+        "FLIR: TARGET - Final:(%.0f,%.0f,%.0f)\n"
+        "FLIR: CROSSHAIR → This is where your crosshair should hit!\n", 
+        planeX, planeY, planeZ, planeHeading,
+        panAngle, tiltAngle, (planeHeading + panAngle),
+        targetRange,
+        (float)deltaX, (float)deltaY, (float)deltaZ,
+        gTargetX, gTargetY, gTargetZ);
     XPLMDebugString(debugMsg);
-    XPLMDebugString("FLIR: Target ready - fire weapons for precision guidance\n");
     
     StartActiveGuidance();
 }
@@ -216,6 +220,42 @@ void FireWeaponAtTarget()
 int IsTargetDesignated()
 {
     return gTargetDesignated;
+}
+
+void GetCrosshairWorldPosition(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle, float* outX, float* outY, float* outZ)
+{
+    // Calculate where the crosshair is pointing in world coordinates
+    float headingRad = (planeHeading + panAngle) * M_PI / 180.0f;
+    float tiltRad = tiltAngle * M_PI / 180.0f;
+    
+    // Use same range calculation as DesignateTarget for consistency
+    double targetRange = 5000.0; // Default range
+    if (tiltAngle < -5.0f && planeY > 100.0f) {
+        targetRange = planeY / fabs(sin(tiltRad)); // Ground intersection
+        if (targetRange > 20000.0) targetRange = 20000.0;
+        if (targetRange < 500.0) targetRange = 500.0;
+    }
+    
+    // Calculate world position where crosshair is pointing
+    double deltaX = targetRange * sin(headingRad) * cos(tiltRad);
+    double deltaZ = targetRange * cos(headingRad) * cos(tiltRad);
+    double deltaY = targetRange * sin(tiltRad);
+    
+    *outX = planeX + (float)deltaX;
+    *outY = planeY + (float)deltaY;
+    *outZ = planeZ + (float)deltaZ;
+}
+
+void LogCrosshairPosition(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
+{
+    float crosshairX, crosshairY, crosshairZ;
+    GetCrosshairWorldPosition(planeX, planeY, planeZ, planeHeading, panAngle, tiltAngle, &crosshairX, &crosshairY, &crosshairZ);
+    
+    char msg[512];
+    snprintf(msg, sizeof(msg), 
+        "FLIR: CROSSHAIR REALTIME - Pan:%.1f° Tilt:%.1f° → World:(%.0f,%.0f,%.0f)\n", 
+        panAngle, tiltAngle, crosshairX, crosshairY, crosshairZ);
+    XPLMDebugString(msg);
 }
 
 void LogWeaponSystemStatus()

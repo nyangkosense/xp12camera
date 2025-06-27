@@ -27,6 +27,8 @@ void TryAlternativeGPSMethods();
 void StartActiveGuidance();
 void StopActiveGuidance();
 float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
+void GetCrosshairWorldPosition(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle, float* outX, float* outY, float* outZ);
+void LogCrosshairPosition(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle);
 
 #ifdef __cplusplus
 }

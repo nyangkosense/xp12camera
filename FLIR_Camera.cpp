@@ -40,6 +40,7 @@ static XPLMHotKeyID gTiltDownKey = NULL;
 static XPLMHotKeyID gThermalToggleKey = NULL;
 static XPLMHotKeyID gFocusLockKey = NULL;
 static XPLMHotKeyID gWeaponFireKey = NULL;
+static XPLMHotKeyID gCrosshairPosKey = NULL;
 
 static XPLMDataRef gPlaneX = NULL;
 static XPLMDataRef gPlaneY = NULL;
@@ -75,6 +76,7 @@ static void TiltDownCallback(void* inRefcon);
 static void ThermalToggleCallback(void* inRefcon);
 static void FocusLockCallback(void* inRefcon);
 static void WeaponFireCallback(void* inRefcon);
+static void CrosshairPosCallback(void* inRefcon);
 static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosingControl, void* inRefcon);
 static int DrawThermalOverlay(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon);
 static void DrawRealisticThermalOverlay(void);
@@ -110,6 +112,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag, "FLIR Visual Effects Toggle", ThermalToggleCallback, NULL);
     gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "FLIR Focus/Lock Target", FocusLockCallback, NULL);
     gWeaponFireKey = XPLMRegisterHotKey(XPLM_VK_G, xplm_DownFlag, "FLIR Toggle Active Guidance", WeaponFireCallback, NULL);
+    gCrosshairPosKey = XPLMRegisterHotKey(XPLM_VK_C, xplm_DownFlag, "FLIR Show Crosshair Position", CrosshairPosCallback, NULL);
 
     return 1;
 }
@@ -125,6 +128,7 @@ PLUGIN_API void XPluginStop(void)
     if (gThermalToggleKey) XPLMUnregisterHotKey(gThermalToggleKey);
     if (gFocusLockKey) XPLMUnregisterHotKey(gFocusLockKey);
     if (gWeaponFireKey) XPLMUnregisterHotKey(gWeaponFireKey);
+    if (gCrosshairPosKey) XPLMUnregisterHotKey(gCrosshairPosKey);
 
     if (gCameraActive) {
         XPLMDontControlCamera();
@@ -264,6 +268,21 @@ static void WeaponFireCallback(void* inRefcon)
 {
     if (gCameraActive && IsTargetDesignated()) {
         FireWeaponAtTarget();
+    }
+}
+
+static void CrosshairPosCallback(void* inRefcon)
+{
+    if (gCameraActive) {
+        float planeX = gPlaneX ? XPLMGetDataf(gPlaneX) : 0.0f;
+        float planeY = gPlaneY ? XPLMGetDataf(gPlaneY) : 0.0f;
+        float planeZ = gPlaneZ ? XPLMGetDataf(gPlaneZ) : 0.0f;
+        float planeHeading = gPlaneHeading ? XPLMGetDataf(gPlaneHeading) : 0.0f;
+        
+        LogCrosshairPosition(planeX, planeY, planeZ, planeHeading, gCameraPan, gCameraTilt);
+        XPLMDebugString("FLIR: Press 'C' again to check crosshair position\n");
+    } else {
+        XPLMDebugString("FLIR: Camera not active - press F9 to activate FLIR first\n");
     }
 }
  
