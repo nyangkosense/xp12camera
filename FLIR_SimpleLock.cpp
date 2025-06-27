@@ -25,9 +25,9 @@ static float gLockedPan = 0.0f;
 static float gLockedTilt = 0.0f;
 
 static int gTargetDesignated = 0;
-static double gTargetLat = 0.0;
-static double gTargetLon = 0.0;
-static double gTargetAlt = 0.0;
+static float gTargetX = 0.0f;
+static float gTargetY = 0.0f;
+static float gTargetZ = 0.0f;
 
 static XPLMDataRef gLatDataRef = NULL;
 static XPLMDataRef gLonDataRef = NULL;
@@ -145,42 +145,35 @@ void GetSimpleLockStatus(char* statusBuffer, int bufferSize)
 
 void SetTargetCoordinates(double lat, double lon, double alt)
 {
-    gTargetLat = lat;
-    gTargetLon = lon;
-    gTargetAlt = alt;
-    gTargetDesignated = 1;
+    // Legacy function - not used in position-based system
+    gTargetDesignated = 0;
 }
 
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
 {
-    if (!gLatDataRef || !gLonDataRef || !gAltDataRef) {
-        return;
-    }
-    
-    double planeLat = XPLMGetDatad(gLatDataRef);
-    double planeLon = XPLMGetDatad(gLonDataRef);
-    double planeAlt = XPLMGetDatad(gAltDataRef);
-    
+    // Calculate target in local coordinates (same as working F3 system)
     float headingRad = (planeHeading + panAngle) * M_PI / 180.0f;
     float tiltRad = tiltAngle * M_PI / 180.0f;
     
-    double targetRange = 5000.0;
+    // Calculate target range based on tilt angle
+    double targetRange = 5000.0; // Default 5km
     if (tiltAngle < -10.0f) {
-        targetRange = fabs(planeAlt / sin(tiltRad));
+        targetRange = fabs(planeY / sin(tiltRad));
         if (targetRange > 50000.0) targetRange = 50000.0;
+        if (targetRange < 1000.0) targetRange = 1000.0;
     }
     
-    double deltaLat = (targetRange * cos(headingRad) * cos(tiltRad)) / 111320.0;
-    double deltaLon = (targetRange * sin(headingRad) * cos(tiltRad)) / (111320.0 * cos(planeLat * M_PI / 180.0));
-    double deltaAlt = targetRange * sin(tiltRad);
+    // Calculate target coordinates in local space (like F3 system)
+    double deltaX = targetRange * sin(headingRad) * cos(tiltRad);
+    double deltaY = targetRange * sin(tiltRad);
+    double deltaZ = targetRange * cos(headingRad) * cos(tiltRad);
     
-    gTargetLat = planeLat + deltaLat;
-    gTargetLon = planeLon + deltaLon;
-    gTargetAlt = planeAlt + deltaAlt;
+    gTargetX = planeX + (float)deltaX;
+    gTargetY = planeY + (float)deltaY;
+    gTargetZ = planeZ + (float)deltaZ;
     gTargetDesignated = 1;
     
-    LogWeaponSystemStatus();
-    
+    // Auto-arm weapons
     if (gMissilesArmed && gBombsArmed && gWeaponsArmed) {
         XPLMSetDatai(gMissilesArmed, 1);
         XPLMSetDatai(gBombsArmed, 1);
@@ -188,49 +181,12 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
         XPLMDebugString("FLIR: Auto-armed missiles, bombs, and rockets\n");
     }
     
-    if (gWeaponTargLat && gWeaponTargLon && gWeaponTargH && gWeaponCount) {
-        int weaponCount = XPLMGetDatai(gWeaponCount);
-        
-        float targetLatArray[25] = {0};
-        float targetLonArray[25] = {0};
-        float targetHArray[25] = {0};
-        
-        for (int i = 0; i < weaponCount && i < 25; i++) {
-            targetLatArray[i] = (float)gTargetLat;
-            targetLonArray[i] = (float)gTargetLon;
-            targetHArray[i] = (float)gTargetAlt;
-        }
-        
-        XPLMSetDatavf(gWeaponTargLat, targetLatArray, 0, weaponCount);
-        XPLMSetDatavf(gWeaponTargLon, targetLonArray, 0, weaponCount);
-        XPLMSetDatavf(gWeaponTargH, targetHArray, 0, weaponCount);
-        
-        char debugMsg[256];
-        snprintf(debugMsg, sizeof(debugMsg), "FLIR: Weapon target arrays set for %d weapons at %.6f°N %.6f°W", 
-                weaponCount, gTargetLat, gTargetLon);
-        XPLMDebugString(debugMsg);
-    }
-    
-    if (gGPSLockCommand) {
-        XPLMCommandOnce(gGPSLockCommand);
-        XPLMDebugString("FLIR: GPS lock command executed\n");
-    } else {
-        XPLMDebugString("FLIR: GPS lock command not available\n");
-    }
-    
-    if (gGPSDestLat && gGPSDestLon) {
-        double currentGPSLat = XPLMGetDatad(gGPSDestLat);
-        double currentGPSLon = XPLMGetDatad(gGPSDestLon);
-        char gpsMsg[256];
-        snprintf(gpsMsg, sizeof(gpsMsg), "FLIR: GPS destination now: %.6f°N %.6f°W\n", currentGPSLat, currentGPSLon);
-        XPLMDebugString(gpsMsg);
-    }
-    
+    // Log target designation
     char debugMsg[256];
-    snprintf(debugMsg, sizeof(debugMsg), "FLIR: Target designated at %.6f°N %.6f°W, Alt: %.0fm (Range: %.0fm)", 
-            gTargetLat, gTargetLon, gTargetAlt, targetRange);
+    snprintf(debugMsg, sizeof(debugMsg), "FLIR: Target designated at position (%.0f, %.0f, %.0f) - Range: %.0fm", 
+            gTargetX, gTargetY, gTargetZ, targetRange);
     XPLMDebugString(debugMsg);
-    XPLMDebugString("FLIR: Target ready - use F5 to fire (guidance will auto-start)\n");
+    XPLMDebugString("FLIR: Target ready - fire weapons for precision guidance\n");
     
     StartActiveGuidance();
 }
@@ -404,15 +360,11 @@ float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTi
     XPLMGetDatavf(gWeaponY, weaponY, 0, weaponCount);
     XPLMGetDatavf(gWeaponZ, weaponZ, 0, weaponCount);
     
-    double targetLat = gTargetLat;
-    double targetLon = gTargetLon;
-    double targetAlt = gTargetAlt;
+    // Use local position coordinates (like working F3 system)
+    float targetX = gTargetX;
+    float targetY = gTargetY;
+    float targetZ = gTargetZ;
     
-    float steeringFrn[25] = {0};
-    float steeringSid[25] = {0};
-    float steeringTop[25] = {0};
-    float theConArray[25] = {0};
-    float targetIndexArray[25] = {0};
     float newVX[25] = {0};
     float newVY[25] = {0};
     float newVZ[25] = {0};
@@ -425,30 +377,22 @@ float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTi
     XPLMGetDatavf(gWeaponVY, currentVY, 0, weaponCount);
     XPLMGetDatavf(gWeaponVZ, currentVZ, 0, weaponCount);
     
-    for (int i = 0; i < weaponCount && i < 25; i++) {
+    // Apply precision guidance to first 2 weapons only
+    for (int i = 0; i < 2 && i < weaponCount; i++) {
         if (weaponX[i] == 0 && weaponY[i] == 0 && weaponZ[i] == 0) {
+            // Inactive missile
+            newVX[i] = currentVX[i];
+            newVY[i] = currentVY[i];
+            newVZ[i] = currentVZ[i];
             continue;
         }
         
-        double currentLat = gLatDataRef ? XPLMGetDatad(gLatDataRef) : 37.0;
-        double currentLon = gLonDataRef ? XPLMGetDatad(gLonDataRef) : -122.0;
+        // Calculate vector to target (direct position - like F3 system)
+        float deltaX = targetX - weaponX[i];
+        float deltaY = targetY - weaponY[i];
+        float deltaZ = targetZ - weaponZ[i];
         
-        double weaponOffsetX = weaponX[i];
-        double weaponOffsetY = weaponY[i]; 
-        double weaponOffsetZ = weaponZ[i];
-        
-        double weaponLat = currentLat + (weaponOffsetZ / 111320.0);
-        double weaponLon = currentLon + (weaponOffsetX / (111320.0 * cos(currentLat * M_PI / 180.0)));
-        
-        double deltaLat = targetLat - weaponLat;
-        double deltaLon = targetLon - weaponLon;
-        double deltaAlt = targetAlt - weaponOffsetY;
-        
-        double deltaX = deltaLon * 111320.0 * cos(weaponLat * M_PI / 180.0);
-        double deltaY = deltaAlt;
-        double deltaZ = deltaLat * 111320.0;
-        
-        double distance = sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+        float distance = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
         
         if (distance > 50.0) {  // Minimum distance threshold
             // Use proven precision guidance parameters
@@ -489,42 +433,23 @@ float GuidanceFlightLoopCallback(float inElapsedSinceLastCall, float inElapsedTi
             newVY[i] = (currentVY[i] + correctionY) * dampingFactor;
             newVZ[i] = (currentVZ[i] + correctionZ) * dampingFactor;
             
-            double bearing = atan2(deltaX, deltaZ) * 180.0 / M_PI;
-            double elevation = atan2(deltaY, sqrt(deltaX * deltaX + deltaZ * deltaZ)) * 180.0 / M_PI;
-            
-            steeringFrn[i] = (float)(bearing * 0.01);
-            steeringSid[i] = (float)(bearing * 0.01);
-            steeringTop[i] = (float)(elevation * 0.01);
-            theConArray[i] = (float)bearing;
-            targetIndexArray[i] = 1.0f;
-            
+            // Log guidance status for first missile only
             if (i == 0) {
+                float speed = sqrt(newVX[i]*newVX[i] + newVY[i]*newVY[i] + newVZ[i]*newVZ[i]);
                 char guidanceMsg[256];
-                snprintf(guidanceMsg, sizeof(guidanceMsg), "FLIR: Weapon[%d] at %.6f,%.6f -> %.6f,%.6f (dist: %.0fm, bearing: %.1f°)\n", 
-                        i, weaponLat, weaponLon, targetLat, targetLon, distance, bearing);
+                snprintf(guidanceMsg, sizeof(guidanceMsg), 
+                    "FLIR: Missile[%d] Pos:(%.0f,%.0f,%.0f) → Target:(%.0f,%.0f,%.0f) Dist:%.0fm Speed:%.1fm/s\n", 
+                    i, weaponX[i], weaponY[i], weaponZ[i], targetX, targetY, targetZ, distance, speed);
                 XPLMDebugString(guidanceMsg);
             }
         }
     }
     
+    // Apply velocity-based guidance (proven working method)
     if (gWeaponVX && gWeaponVY && gWeaponVZ) {
         XPLMSetDatavf(gWeaponVX, newVX, 0, weaponCount);
         XPLMSetDatavf(gWeaponVY, newVY, 0, weaponCount);
         XPLMSetDatavf(gWeaponVZ, newVZ, 0, weaponCount);
-    }
-    
-    if (gWeaponSFrn && gWeaponSSid && gWeaponSTop) {
-        XPLMSetDatavf(gWeaponSFrn, steeringFrn, 0, weaponCount);
-        XPLMSetDatavf(gWeaponSSid, steeringSid, 0, weaponCount);
-        XPLMSetDatavf(gWeaponSTop, steeringTop, 0, weaponCount);
-    }
-    
-    if (gWeaponThecon) {
-        XPLMSetDatavf(gWeaponThecon, theConArray, 0, weaponCount);
-    }
-    
-    if (gWeaponTargetIndex) {
-        XPLMSetDatavf(gWeaponTargetIndex, targetIndexArray, 0, weaponCount);
     }
     
     return 0.1f;
