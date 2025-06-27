@@ -152,7 +152,8 @@ void SetTargetCoordinates(double lat, double lon, double alt)
 void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle)
 {
     // Use the actual camera angles (where user pointed the crosshair)
-    float headingRad = (planeHeading + panAngle) * M_PI / 180.0f;
+    // INVERT pan angle: positive pan should turn LEFT in X-Plane coordinate system
+    float headingRad = (planeHeading - panAngle) * M_PI / 180.0f;
     float tiltRad = tiltAngle * M_PI / 180.0f;
     
     // Calculate ground intersection distance based on actual tilt
@@ -186,13 +187,13 @@ void DesignateTarget(float planeX, float planeY, float planeZ, float planeHeadin
     snprintf(debugMsg, sizeof(debugMsg), 
         "FLIR: CROSSHAIR ANALYSIS\n"
         "FLIR: INPUT - Aircraft:(%.0f,%.0f,%.0f) Heading:%.1f°\n"
-        "FLIR: CAMERA - Pan:%.1f° Tilt:%.1f° → Look Direction:%.1f°\n"
+        "FLIR: CAMERA - Pan:%.1f° Tilt:%.1f° → Look Direction:%.1f° (INVERTED PAN)\n"
         "FLIR: RANGE - Calculated:%.0fm (Tilt-based ground intersect)\n"
         "FLIR: VECTOR - DeltaX:%.0f DeltaY:%.0f DeltaZ:%.0f\n"
         "FLIR: TARGET - Final:(%.0f,%.0f,%.0f)\n"
         "FLIR: CROSSHAIR → This is where your crosshair should hit!\n", 
         planeX, planeY, planeZ, planeHeading,
-        panAngle, tiltAngle, (planeHeading + panAngle),
+        panAngle, tiltAngle, (planeHeading - panAngle),
         targetRange,
         (float)deltaX, (float)deltaY, (float)deltaZ,
         gTargetX, gTargetY, gTargetZ);
@@ -225,7 +226,8 @@ int IsTargetDesignated()
 void GetCrosshairWorldPosition(float planeX, float planeY, float planeZ, float planeHeading, float panAngle, float tiltAngle, float* outX, float* outY, float* outZ)
 {
     // Calculate where the crosshair is pointing in world coordinates
-    float headingRad = (planeHeading + panAngle) * M_PI / 180.0f;
+    // INVERT pan angle: positive pan should turn LEFT in X-Plane coordinate system
+    float headingRad = (planeHeading - panAngle) * M_PI / 180.0f;
     float tiltRad = tiltAngle * M_PI / 180.0f;
     
     // Use same range calculation as DesignateTarget for consistency
