@@ -1,0 +1,44 @@
+# Makefile for FLIR Coordinate Test Plugin
+
+# Compiler settings
+CXX = x86_64-w64-mingw32-g++
+CXXFLAGS = -std=c++11 -Wall -O2 -fPIC -DXPLM200=1 -DXPLM210=1 -DXPLM300=1 -DXPLM301=1 -DXPLM302=1 -DXPLM400=1
+INCLUDES = -ISDK/CHeaders/XPLM -ISDK/CHeaders/Widgets -DIBM=1 -DWIN32=1 -D_WIN32=1
+
+# Linker settings
+LDFLAGS = -shared -static-libgcc -static-libstdc++ -Wl,--kill-at -Wl,--no-undefined
+LIBS = -LSDK/Libraries/Win -lXPLM_64 -lXPWidgets_64 -lopengl32 -lgdi32
+
+# Source files
+COORD_SOURCES = FLIR_CoordinateTest.cpp
+COORD_OBJECTS = $(COORD_SOURCES:.cpp=.o)
+
+# Output
+COORD_TARGET = build/FLIR_CoordinateTest/win_x64/FLIR_CoordinateTest.xpl
+
+# Default target
+all: $(COORD_TARGET)
+
+# Create output directory
+build/FLIR_CoordinateTest/win_x64:
+	mkdir -p build/FLIR_CoordinateTest/win_x64
+
+# Compile source files
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+# Link the plugin
+$(COORD_TARGET): $(COORD_OBJECTS) build/FLIR_CoordinateTest/win_x64
+	$(CXX) $(COORD_OBJECTS) $(LDFLAGS) $(LIBS) -o $(COORD_TARGET)
+	@echo "FLIR Coordinate Test Plugin built successfully: $(COORD_TARGET)"
+
+# Clean build files
+clean:
+	rm -f $(COORD_OBJECTS)
+	rm -f $(COORD_TARGET)
+
+# Clean all
+cleanall: clean
+	rm -rf build/FLIR_CoordinateTest
+
+.PHONY: all clean cleanall
