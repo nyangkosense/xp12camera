@@ -324,7 +324,7 @@ static void RunMatrixTest(void)
     Vector3 worldDirection;
     // X-Plane: +X=East, +Z=South, +Y=Up
     worldDirection.x = sin(headingRad) * cos(pitchRad);   // East component
-    worldDirection.y = -sin(pitchRad);                    // Down component (negative for downward pitch)
+    worldDirection.y = sin(pitchRad);                     // Up/Down component (negative tilt = negative Y = downward)
     worldDirection.z = cos(headingRad) * cos(pitchRad);   // South component
     
     snprintf(msg, sizeof(msg), 
