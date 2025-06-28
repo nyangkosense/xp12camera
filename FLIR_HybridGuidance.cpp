@@ -357,28 +357,31 @@ static bool CalculateCrosshairDirection(float missileX, float missileY, float mi
     float pitchRad = acPitch * M_PI / 180.0f;
     float rollRad = acRoll * M_PI / 180.0f;
     
-    // Simple X-Plane coordinate system (Z forward, Y up, X right)
+    // X-Plane coordinate system: X=East, Y=Up, Z=South
+    // Aircraft typically flies North = negative Z direction
     // Start with forward direction, then apply pan/tilt
     
-    // Base direction (forward from aircraft)
+    // Base direction (forward from aircraft) 
     float baseDirX = 0.0f;      // No sideways component initially
     float baseDirY = 0.0f;      // No vertical component initially  
-    float baseDirZ = 1.0f;      // Forward in X-Plane coordinates
+    float baseDirZ = -1.0f;     // Forward = North = negative Z in X-Plane
     
     // Apply FLIR pan (rotation around Y axis)
-    float dirX = baseDirX * cos(panRad) + baseDirZ * sin(panRad);
+    // Positive pan = turn right = positive X direction
+    float dirX = baseDirX * cos(panRad) - baseDirZ * sin(panRad);
     float dirY = baseDirY;
-    float dirZ = -baseDirX * sin(panRad) + baseDirZ * cos(panRad);
+    float dirZ = baseDirX * sin(panRad) + baseDirZ * cos(panRad);
     
     // Apply FLIR tilt (rotation around X axis)
     float finalDirX = dirX;
     float finalDirY = dirY * cos(-tiltRad) - dirZ * sin(-tiltRad);
     float finalDirZ = dirY * sin(-tiltRad) + dirZ * cos(-tiltRad);
     
-    // Transform by aircraft heading only (ignore pitch/roll for now - too complex)
-    *outDirX = finalDirX * cos(headingRad) - finalDirZ * sin(headingRad);
+    // Transform by aircraft heading (X-Plane: 0°=North, 90°=East, 180°=South, 270°=West)
+    // Positive heading = clockwise rotation when viewed from above
+    *outDirX = finalDirX * cos(headingRad) + finalDirZ * sin(headingRad);
     *outDirY = finalDirY;
-    *outDirZ = finalDirX * sin(headingRad) + finalDirZ * cos(headingRad);
+    *outDirZ = -finalDirX * sin(headingRad) + finalDirZ * cos(headingRad);
     
     // Normalize direction vector
     float magnitude = sqrt((*outDirX)*(*outDirX) + (*outDirY)*(*outDirY) + (*outDirZ)*(*outDirZ));
@@ -394,8 +397,8 @@ static bool CalculateCrosshairDirection(float missileX, float missileY, float mi
     if (dirDebugTimer >= 2.0f) {
         char msg[256];
         snprintf(msg, sizeof(msg), 
-            "FLIR Direction: Pan=%.1f° Tilt=%.1f° -> Dir(%.2f,%.2f,%.2f)\\n",
-            pan, tilt, *outDirX, *outDirY, *outDirZ);
+            "FLIR Direction: Heading=%.1f° Pan=%.1f° Tilt=%.1f° -> Dir(%.3f,%.3f,%.3f)\\n",
+            acHeading, pan, tilt, *outDirX, *outDirY, *outDirZ);
         XPLMDebugString(msg);
         dirDebugTimer = 0.0f;
     }
