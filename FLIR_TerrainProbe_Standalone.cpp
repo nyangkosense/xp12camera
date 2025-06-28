@@ -187,60 +187,47 @@ static bool GetFLIRAngles(float* outPan, float* outTilt, bool* outActive)
     return true;
 }
 
-// Precise binary search terrain intersection - finds exact hit point within 1m
+// Simple ray marching to find terrain intersection
 static bool FindPreciseTarget(float startX, float startY, float startZ, float dirX, float dirY, float dirZ, float* outX, float* outY, float* outZ, float* outRange)
 {
     if (!gTerrainProbe) return false;
     
-    float maxDist = 30000.0f;  // 30km maximum range  
-    float minDist = 100.0f;    // Start at 100m minimum (avoid aircraft itself)
-    float tolerance = 10.0f;   // 10 meter precision for now (faster debugging)
-    
     XPLMProbeInfo_t probeInfo;
     probeInfo.structSize = sizeof(XPLMProbeInfo_t);
     
-    // Binary search for precise intersection
-    while ((maxDist - minDist) > tolerance) {
-        float testDist = (maxDist + minDist) / 2.0f;
+    // March along the ray in steps
+    float stepSize = 50.0f; // 50 meter steps for accuracy
+    float maxRange = 50000.0f; // 50km max range
+    
+    for (float range = 100.0f; range <= maxRange; range += stepSize) {
+        // Calculate point along ray
+        float rayX = startX + range * dirX;
+        float rayY = startY + range * dirY;
+        float rayZ = startZ + range * dirZ;
         
-        // Calculate test point along ray
-        float testX = startX + testDist * dirX;
-        float testY = startY + testDist * dirY;
-        float testZ = startZ + testDist * dirZ;
-        
-        // Probe terrain at test point
-        XPLMProbeResult result = XPLMProbeTerrainXYZ(gTerrainProbe, testX, testY, testZ, &probeInfo);
+        // Probe terrain at this point
+        XPLMProbeResult result = XPLMProbeTerrainXYZ(gTerrainProbe, rayX, rayY, rayZ, &probeInfo);
         
         if (result == xplm_ProbeHitTerrain) {
-            float terrainHeight = probeInfo.locationY;
-            if (testY <= terrainHeight + 5.0f) {
-                // Ray point hits terrain (within 5m tolerance) - we found intersection
-                maxDist = testDist;
-                break;
-            } else {
-                // Ray point is above terrain - go further
-                minDist = testDist;
+            float terrainY = probeInfo.locationY;
+            
+            // Check if our ray has passed below terrain level
+            if (rayY <= terrainY + 20.0f) {
+                // Found intersection! Return terrain coordinates
+                *outX = probeInfo.locationX;
+                *outY = probeInfo.locationY; 
+                *outZ = probeInfo.locationZ;
+                *outRange = range;
+                
+                char debugMsg[256];
+                snprintf(debugMsg, sizeof(debugMsg), 
+                    "TERRAIN PROBE: Ray intersects terrain - rayY=%.1f terrainY=%.1f at range=%.0fm\n",
+                    rayY, terrainY, range);
+                XPLMDebugString(debugMsg);
+                
+                return true;
             }
-        } else {
-            // No terrain hit at this point - reduce search range
-            maxDist = testDist;
         }
-    }
-    
-    // Final precise probe at intersection point
-    float finalDist = (maxDist + minDist) / 2.0f;
-    float finalX = startX + finalDist * dirX;
-    float finalY = startY + finalDist * dirY;
-    float finalZ = startZ + finalDist * dirZ;
-    
-    XPLMProbeResult finalResult = XPLMProbeTerrainXYZ(gTerrainProbe, finalX, finalY, finalZ, &probeInfo);
-    
-    if (finalResult == xplm_ProbeHitTerrain) {
-        *outX = probeInfo.locationX;
-        *outY = probeInfo.locationY;
-        *outZ = probeInfo.locationZ;
-        *outRange = finalDist;
-        return true;
     }
     
     return false;
