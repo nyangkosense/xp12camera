@@ -67,13 +67,13 @@ static XPLMDataRef gAircraftRoll = NULL;
 
 // Control parameters
 static float gMouseSensitivity = 1.5f;
-static float gAutoGuidanceStrength = 0.3f; // How aggressively to steer toward crosshair
+static float gAutoGuidanceStrength = 0.8f; // How aggressively to steer toward crosshair (higher = more magnet-like)
 static float gMaxSteeringForce = 40.0f;
 static float gWeaponSpeed = 120.0f;
 
-// Missile physics parameters
-static float gMaxTurnRate = 10.0f; // degrees per second
-static float gTargetLeadTime = 0.5f; // seconds ahead to predict
+// Missile physics parameters (tuned for "magnet" behavior)
+static float gMaxTurnRate = 80.0f; // degrees per second (based on 25° max fin deflection)
+static float gTargetLeadTime = 0.2f; // seconds ahead to predict (shorter for tighter following)
 
 // Target coordinates (calculated from FLIR)
 static float gTargetX = 0.0f;
