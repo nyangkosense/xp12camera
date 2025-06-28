@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maritime Patrol Operations Center</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/tactical_style.css">
+</head>
+<body>
+    <div class="operations-interface">
+        <!-- Tactical Header -->
+        <header class="ops-header">
+            <div class="header-left">
+                <div class="unit-callsign">MPOC-1</div>
+                <div class="system-status">OPERATIONAL</div>
+            </div>
+            <div class="header-center">
+                <h1>MARITIME PATROL OPERATIONS CENTER</h1>
+                <div class="classification-bar">
+                    <span class="classification">OFFICIAL USE ONLY</span>
+                    <span class="timestamp" id="currentTime"></span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="weather-info">
+                    <span class="weather-label">WX:</span>
+                    <span class="weather-data" id="currentWeather">LOADING...</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-ops-container">
+            <!-- Left: Base Selection & Mission Control -->
+            <div class="control-panel">
+                <div class="panel-header">
+                    <h2>BASE OPERATIONS</h2>
+                    <div class="panel-status">ACTIVE</div>
+                </div>
+
+                <!-- Base Selection -->
+                <div class="ops-section">
+                    <div class="section-title">DEPARTURE BASE</div>
+                    <select id="baseSelect" class="tactical-select">
+                        <option value="">SELECT OPERATING BASE...</option>
+                    </select>
+                    <div id="baseDetails" class="base-details"></div>
+                </div>
+
+                <!-- Mission Parameters -->
+                <div class="ops-section">
+                    <div class="section-title">MISSION PARAMETERS</div>
+                    <div class="param-group">
+                        <label>OPERATION TYPE</label>
+                        <select id="operationType" class="tactical-select">
+                            <option value="SURVEILLANCE">Maritime Surveillance</option>
+                            <option value="SAR">Search & Rescue</option>
+                            <option value="INTERDICTION">Maritime Interdiction</option>
+                            <option value="ASW">Anti-Submarine Warfare</option>
+                            <option value="PATROL">Border Patrol</option>
+                            <option value="RECON">Reconnaissance</option>
+                        </select>
+                    </div>
+                    <div class="param-group">
+                        <label>THREAT LEVEL</label>
+                        <select id="threatLevel" class="tactical-select">
+                            <option value="LOW">LOW - Routine Patrol</option>
+                            <option value="MEDIUM">MEDIUM - Heightened Alert</option>
+                            <option value="HIGH">HIGH - Active Threat</option>
+                            <option value="CRITICAL">CRITICAL - Imminent Danger</option>
+                        </select>
+                    </div>
+                    <div class="param-group">
+                        <label>PATROL DURATION</label>
+                        <select id="patrolDuration" class="tactical-select">
+                            <option value="SHORT">SHORT (2-4 Hours)</option>
+                            <option value="STANDARD">STANDARD (4-6 Hours)</option>
+                            <option value="EXTENDED">EXTENDED (6-8 Hours)</option>
+                            <option value="LONG_RANGE">LONG RANGE (8+ Hours)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Aircraft Assignment -->
+                <div class="ops-section">
+                    <div class="section-title">AIRCRAFT ASSIGNMENT</div>
+                    <div id="aircraftAssignment" class="aircraft-display">
+                        <div class="aircraft-placeholder">Select base to view available aircraft</div>
+                    </div>
+                </div>
+
+                <!-- Mission Generation -->
+                <div class="ops-section">
+                    <button id="generateOperation" class="ops-button primary">
+                        <span class="button-icon">⚡</span>
+                        GENERATE OPERATION
+                    </button>
+                    <button id="briefingMode" class="ops-button secondary" style="display: none;">
+                        <span class="button-icon">📋</span>
+                        VIEW FULL BRIEFING
+                    </button>
+                </div>
+            </div>
+
+            <!-- Center: Tactical Map Display -->
+            <div class="map-container">
+                <div class="map-header">
+                    <div class="map-title">TACTICAL SITUATION DISPLAY</div>
+                    <div class="map-controls">
+                        <button class="map-control-btn" id="showBases">BASES</button>
+                        <button class="map-control-btn" id="showRoutes">ROUTES</button>
+                        <button class="map-control-btn" id="showThreats">INTEL</button>
+                        <button class="map-control-btn" id="mapSettings">LAYERS</button>
+                    </div>
+                </div>
+                <div id="tacticalMap" class="tactical-map"></div>
+                <div class="map-info-overlay">
+                    <div class="legend-container">
+                        <div class="legend-title">SYMBOLOGY</div>
+                        <div class="legend-item">
+                            <span class="symbol air-base"></span>
+                            <span>Air Force Base</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="symbol naval-base"></span>
+                            <span>Naval Base</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="symbol patrol-area"></span>
+                            <span>Patrol Area</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="symbol threat-area"></span>
+                            <span>Threat Zone</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Mission Status & Intel -->
+            <div class="intel-panel">
+                <div class="panel-header">
+                    <h2>MISSION CONTROL</h2>
+                    <div class="mission-status" id="missionStatus">STANDBY</div>
+                </div>
+
+                <!-- Current Mission Display -->
+                <div class="intel-section">
+                    <div class="section-title">CURRENT OPERATION</div>
+                    <div id="currentMission" class="mission-display">
+                        <div class="mission-placeholder">
+                            <div class="placeholder-icon">🎯</div>
+                            <p>No active mission</p>
+                            <p>Select base and generate operation to begin</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Intel -->
+                <div class="intel-section">
+                    <div class="section-title">INTELLIGENCE SUMMARY</div>
+                    <div id="intelSummary" class="intel-display">
+                        <div class="intel-item">
+                            <span class="intel-label">WEATHER:</span>
+                            <span class="intel-value" id="weatherStatus">UPDATING...</span>
+                        </div>
+                        <div class="intel-item">
+                            <span class="intel-label">SEA STATE:</span>
+                            <span class="intel-value" id="seaState">CALM</span>
+                        </div>
+                        <div class="intel-item">
+                            <span class="intel-label">VISIBILITY:</span>
+                            <span class="intel-value" id="visibility">GOOD</span>
+                        </div>
+                        <div class="intel-item">
+                            <span class="intel-label">THREATS:</span>
+                            <span class="intel-value threat-low" id="threatStatus">MINIMAL</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FLIR Integration Status -->
+                <div class="intel-section">
+                    <div class="section-title">SENSOR STATUS</div>
+                    <div class="sensor-status">
+                        <div class="sensor-item">
+                            <span class="sensor-name">FLIR CAMERA</span>
+                            <span class="sensor-status-indicator ready">READY</span>
+                        </div>
+                        <div class="sensor-controls">
+                            <div class="control-hint">F9: ACTIVATE CAMERA</div>
+                            <div class="control-hint">SPACE: TARGET LOCK</div>
+                            <div class="control-hint">T: THERMAL MODE</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mission Briefing Modal -->
+        <div id="briefingModal" class="briefing-modal" style="display: none;">
+            <div class="briefing-content">
+                <div class="briefing-header">
+                    <h2>MISSION BRIEFING</h2>
+                    <button class="close-briefing" id="closeBriefing">✕</button>
+                </div>
+                <div class="briefing-body" id="briefingContent">
+                    <!-- Mission briefing content will be generated here -->
+                </div>
+                <div class="briefing-footer">
+                    <button class="ops-button secondary" id="printBriefing">PRINT BRIEFING</button>
+                    <button class="ops-button primary" id="acknowledgeBriefing">ACKNOWLEDGE & PROCEED</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/tactical-bases.js"></script>
+    <script src="js/mission-controller.js"></script>
+    <script src="js/tactical-map.js"></script>
+    <script src="js/operations-app.js"></script>
+</body>
+</html>

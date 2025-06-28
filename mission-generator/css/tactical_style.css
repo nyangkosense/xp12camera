@@ -1,0 +1,675 @@
+/* Tactical Operations Center Styling */
+:root {
+    --ops-dark: #0a0e13;
+    --ops-panel: #151a21;
+    --ops-surface: #1c2329;
+    --ops-accent: #00ff7f;
+    --ops-warning: #ff8c00;
+    --ops-danger: #ff4757;
+    --ops-info: #3742fa;
+    --ops-text: #f1f3f4;
+    --ops-text-dim: #9aa0a6;
+    --ops-border: #34495e;
+    --ops-active: #2ecc71;
+    --ops-inactive: #95a5a6;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--ops-dark);
+    color: var(--ops-text);
+    font-family: 'Consolas', 'Monaco', 'Lucida Console', monospace;
+    font-size: 12px;
+    overflow: hidden;
+    user-select: none;
+}
+
+/* Main Operations Interface */
+.operations-interface {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(135deg, var(--ops-dark) 0%, var(--ops-panel) 100%);
+}
+
+/* Tactical Header */
+.ops-header {
+    background: linear-gradient(90deg, var(--ops-panel), var(--ops-surface));
+    border-bottom: 2px solid var(--ops-accent);
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.header-left, .header-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.header-center {
+    flex: 2;
+    text-align: center;
+}
+
+.unit-callsign {
+    color: var(--ops-accent);
+    font-weight: bold;
+    font-size: 14px;
+    letter-spacing: 2px;
+}
+
+.system-status {
+    color: var(--ops-active);
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+.ops-header h1 {
+    color: var(--ops-text);
+    font-size: 18px;
+    letter-spacing: 3px;
+    margin-bottom: 5px;
+    text-shadow: 0 0 10px rgba(0, 255, 127, 0.3);
+}
+
+.classification-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+.classification {
+    color: var(--ops-warning);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 2px 8px;
+    border: 1px solid var(--ops-warning);
+    border-radius: 2px;
+}
+
+.timestamp {
+    color: var(--ops-text-dim);
+    font-size: 10px;
+    font-family: monospace;
+}
+
+.weather-info {
+    text-align: right;
+}
+
+.weather-label {
+    color: var(--ops-text-dim);
+    font-size: 10px;
+}
+
+.weather-data {
+    color: var(--ops-info);
+    font-weight: bold;
+    margin-left: 5px;
+}
+
+/* Main Operations Container */
+.main-ops-container {
+    display: flex;
+    flex: 1;
+    height: calc(100vh - 80px);
+}
+
+/* Control Panel */
+.control-panel {
+    width: 320px;
+    background: var(--ops-panel);
+    border-right: 1px solid var(--ops-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.panel-header {
+    background: var(--ops-surface);
+    padding: 15px;
+    border-bottom: 1px solid var(--ops-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-header h2 {
+    color: var(--ops-accent);
+    font-size: 12px;
+    letter-spacing: 1px;
+}
+
+.panel-status {
+    color: var(--ops-active);
+    font-size: 10px;
+    padding: 2px 6px;
+    border: 1px solid var(--ops-active);
+    border-radius: 2px;
+}
+
+.ops-section {
+    padding: 15px;
+    border-bottom: 1px solid var(--ops-border);
+}
+
+.section-title {
+    color: var(--ops-accent);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--ops-border);
+}
+
+/* Tactical Controls */
+.tactical-select {
+    width: 100%;
+    background: var(--ops-surface);
+    border: 1px solid var(--ops-border);
+    color: var(--ops-text);
+    padding: 8px;
+    font-family: inherit;
+    font-size: 11px;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.tactical-select:focus {
+    outline: none;
+    border-color: var(--ops-accent);
+    box-shadow: 0 0 5px rgba(0, 255, 127, 0.3);
+}
+
+.tactical-select option {
+    background: var(--ops-surface);
+    color: var(--ops-text);
+}
+
+.base-details {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--ops-surface);
+    border-radius: 3px;
+    font-size: 10px;
+    display: none;
+}
+
+.base-details.show {
+    display: block;
+}
+
+.base-detail-item {
+    margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.detail-label {
+    color: var(--ops-text-dim);
+}
+
+.detail-value {
+    color: var(--ops-text);
+    font-weight: bold;
+}
+
+.param-group {
+    margin-bottom: 15px;
+}
+
+.param-group label {
+    display: block;
+    color: var(--ops-text-dim);
+    font-size: 9px;
+    margin-bottom: 5px;
+    letter-spacing: 1px;
+}
+
+/* Aircraft Assignment */
+.aircraft-display {
+    background: var(--ops-surface);
+    border: 1px solid var(--ops-border);
+    border-radius: 3px;
+    padding: 10px;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.aircraft-placeholder {
+    color: var(--ops-text-dim);
+    font-size: 10px;
+    text-align: center;
+}
+
+.aircraft-info {
+    color: var(--ops-text);
+    font-size: 10px;
+}
+
+.aircraft-type {
+    color: var(--ops-accent);
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+/* Operations Buttons */
+.ops-button {
+    width: 100%;
+    background: linear-gradient(135deg, var(--ops-info), var(--ops-accent));
+    border: none;
+    color: var(--ops-text);
+    padding: 12px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.ops-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 255, 127, 0.4);
+}
+
+.ops-button.secondary {
+    background: linear-gradient(135deg, var(--ops-surface), var(--ops-border));
+}
+
+.ops-button.secondary:hover {
+    box-shadow: 0 4px 12px rgba(52, 73, 94, 0.4);
+}
+
+.button-icon {
+    font-size: 14px;
+}
+
+/* Map Container */
+.map-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--ops-surface);
+    position: relative;
+}
+
+.map-header {
+    background: var(--ops-panel);
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--ops-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.map-title {
+    color: var(--ops-accent);
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.map-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.map-control-btn {
+    background: var(--ops-surface);
+    border: 1px solid var(--ops-border);
+    color: var(--ops-text);
+    padding: 5px 10px;
+    font-family: inherit;
+    font-size: 9px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.map-control-btn:hover,
+.map-control-btn.active {
+    background: var(--ops-accent);
+    color: var(--ops-dark);
+}
+
+.tactical-map {
+    flex: 1;
+    position: relative;
+}
+
+/* Map Info Overlay */
+.map-info-overlay {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(21, 26, 33, 0.95);
+    border: 1px solid var(--ops-border);
+    border-radius: 3px;
+    padding: 15px;
+    backdrop-filter: blur(5px);
+    z-index: 1000;
+}
+
+.legend-container {
+    min-width: 150px;
+}
+
+.legend-title {
+    color: var(--ops-accent);
+    font-size: 10px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 9px;
+}
+
+.symbol {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.symbol.air-base {
+    background: var(--ops-accent);
+    box-shadow: 0 0 3px var(--ops-accent);
+}
+
+.symbol.naval-base {
+    background: var(--ops-info);
+    box-shadow: 0 0 3px var(--ops-info);
+}
+
+.symbol.patrol-area {
+    background: var(--ops-warning);
+    box-shadow: 0 0 3px var(--ops-warning);
+}
+
+.symbol.threat-area {
+    background: var(--ops-danger);
+    box-shadow: 0 0 3px var(--ops-danger);
+}
+
+/* Intel Panel */
+.intel-panel {
+    width: 350px;
+    background: var(--ops-panel);
+    border-left: 1px solid var(--ops-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.mission-status {
+    color: var(--ops-warning);
+    font-size: 10px;
+    padding: 2px 6px;
+    border: 1px solid var(--ops-warning);
+    border-radius: 2px;
+}
+
+.intel-section {
+    padding: 15px;
+    border-bottom: 1px solid var(--ops-border);
+}
+
+/* Mission Display */
+.mission-display {
+    background: var(--ops-surface);
+    border: 1px solid var(--ops-border);
+    border-radius: 3px;
+    padding: 15px;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.mission-placeholder {
+    text-align: center;
+    color: var(--ops-text-dim);
+}
+
+.placeholder-icon {
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+.mission-placeholder p {
+    font-size: 10px;
+    margin-bottom: 5px;
+}
+
+/* Intel Display */
+.intel-display {
+    background: var(--ops-surface);
+    border: 1px solid var(--ops-border);
+    border-radius: 3px;
+    padding: 10px;
+}
+
+.intel-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 10px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.intel-label {
+    color: var(--ops-text-dim);
+}
+
+.intel-value {
+    color: var(--ops-text);
+    font-weight: bold;
+    max-width: 60%;
+    text-align: right;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+.intel-value.threat-low {
+    color: var(--ops-active);
+}
+
+.intel-value.threat-medium {
+    color: var(--ops-warning);
+}
+
+.intel-value.threat-high {
+    color: var(--ops-danger);
+}
+
+/* Sensor Status */
+.sensor-status {
+    background: var(--ops-surface);
+    border: 1px solid var(--ops-border);
+    border-radius: 3px;
+    padding: 10px;
+}
+
+.sensor-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.sensor-name {
+    color: var(--ops-text);
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.sensor-status-indicator {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    border: 1px solid;
+}
+
+.sensor-status-indicator.ready {
+    color: var(--ops-active);
+    border-color: var(--ops-active);
+    background: rgba(46, 204, 113, 0.1);
+}
+
+.sensor-controls {
+    border-top: 1px solid var(--ops-border);
+    padding-top: 10px;
+}
+
+.control-hint {
+    color: var(--ops-text-dim);
+    font-size: 9px;
+    margin-bottom: 3px;
+}
+
+/* Mission Briefing Modal */
+.briefing-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.briefing-content {
+    background: var(--ops-panel);
+    border: 2px solid var(--ops-accent);
+    border-radius: 5px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80%;
+    display: flex;
+    flex-direction: column;
+}
+
+.briefing-header {
+    background: var(--ops-surface);
+    padding: 15px;
+    border-bottom: 1px solid var(--ops-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.briefing-header h2 {
+    color: var(--ops-accent);
+    font-size: 14px;
+    letter-spacing: 1px;
+}
+
+.close-briefing {
+    background: none;
+    border: none;
+    color: var(--ops-text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.close-briefing:hover {
+    color: var(--ops-danger);
+}
+
+.briefing-body {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.briefing-footer {
+    background: var(--ops-surface);
+    padding: 15px;
+    border-top: 1px solid var(--ops-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--ops-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--ops-border);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--ops-accent);
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+    .control-panel {
+        width: 280px;
+    }
+    
+    .intel-panel {
+        width: 300px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .main-ops-container {
+        flex-direction: column;
+    }
+    
+    .control-panel,
+    .intel-panel {
+        width: 100%;
+        max-height: 200px;
+    }
+    
+    .map-container {
+        flex: 1;
+        min-height: 400px;
+    }
+}
