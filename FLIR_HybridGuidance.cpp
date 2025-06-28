@@ -75,9 +75,9 @@ static float gWeaponSpeed = 120.0f;
 static float gMaxTurnRate = 120.0f; // degrees per second (very aggressive)
 static float gTargetLeadTime = 0.1f; // seconds ahead to predict (very short for precision)
 static float gGravityCompensation = 9.81f; // m/s² upward bias to counter gravity
-static float gProportionalGain = 2.0f; // P term for precise tracking
-static float gIntegralGain = 0.5f; // I term to eliminate steady-state error
-static float gDerivativeGain = 0.1f; // D term for smooth approach (shorter for tighter following)
+static float gProportionalGain = 0.5f; // P term for precise tracking (reduced for stability)
+static float gIntegralGain = 0.1f; // I term to eliminate steady-state error (reduced)
+static float gDerivativeGain = 0.05f; // D term for smooth approach (reduced) (shorter for tighter following)
 
 // Target coordinates (calculated from FLIR)
 static float gTargetX = 0.0f;
@@ -340,23 +340,28 @@ static bool CalculateCrosshairDirection(float missileX, float missileY, float mi
     float pitchRad = acPitch * M_PI / 180.0f;
     float rollRad = acRoll * M_PI / 180.0f;
     
-    // Calculate FLIR direction in aircraft local coordinates
-    float localDirX = sin(panRad) * cos(tiltRad);
-    float localDirY = -sin(tiltRad);
-    float localDirZ = cos(panRad) * cos(tiltRad);
+    // Simple X-Plane coordinate system (Z forward, Y up, X right)
+    // Start with forward direction, then apply pan/tilt
     
-    // Transform by aircraft orientation (heading, pitch, roll)
-    float temp1X = localDirX * cos(headingRad) - localDirZ * sin(headingRad);
-    float temp1Y = localDirY;
-    float temp1Z = localDirX * sin(headingRad) + localDirZ * cos(headingRad);
+    // Base direction (forward from aircraft)
+    float baseDirX = 0.0f;      // No sideways component initially
+    float baseDirY = 0.0f;      // No vertical component initially  
+    float baseDirZ = 1.0f;      // Forward in X-Plane coordinates
     
-    float temp2X = temp1X * cos(pitchRad) + temp1Y * sin(pitchRad);
-    float temp2Y = -temp1X * sin(pitchRad) + temp1Y * cos(pitchRad);
-    float temp2Z = temp1Z;
+    // Apply FLIR pan (rotation around Y axis)
+    float dirX = baseDirX * cos(panRad) + baseDirZ * sin(panRad);
+    float dirY = baseDirY;
+    float dirZ = -baseDirX * sin(panRad) + baseDirZ * cos(panRad);
     
-    *outDirX = temp2X;
-    *outDirY = temp2Y * cos(rollRad) - temp2Z * sin(rollRad);
-    *outDirZ = temp2Y * sin(rollRad) + temp2Z * cos(rollRad);
+    // Apply FLIR tilt (rotation around X axis)
+    float finalDirX = dirX;
+    float finalDirY = dirY * cos(-tiltRad) - dirZ * sin(-tiltRad);
+    float finalDirZ = dirY * sin(-tiltRad) + dirZ * cos(-tiltRad);
+    
+    // Transform by aircraft heading only (ignore pitch/roll for now - too complex)
+    *outDirX = finalDirX * cos(headingRad) - finalDirZ * sin(headingRad);
+    *outDirY = finalDirY;
+    *outDirZ = finalDirX * sin(headingRad) + finalDirZ * cos(headingRad);
     
     // Normalize direction vector
     float magnitude = sqrt((*outDirX)*(*outDirX) + (*outDirY)*(*outDirY) + (*outDirZ)*(*outDirZ));
@@ -364,6 +369,18 @@ static bool CalculateCrosshairDirection(float missileX, float missileY, float mi
         *outDirX /= magnitude;
         *outDirY /= magnitude;
         *outDirZ /= magnitude;
+    }
+    
+    // Debug direction calculation
+    static float dirDebugTimer = 0.0f;
+    dirDebugTimer += 0.02f; // Assuming 50Hz calls
+    if (dirDebugTimer >= 2.0f) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), 
+            "FLIR Direction: Pan=%.1f° Tilt=%.1f° -> Dir(%.2f,%.2f,%.2f)\\n",
+            pan, tilt, *outDirX, *outDirY, *outDirZ);
+        XPLMDebugString(msg);
+        dirDebugTimer = 0.0f;
     }
     
     return true;
