@@ -313,16 +313,19 @@ static void RunMatrixTest(void)
         "MATRIX_TEST: FLIR - Pan=%.1f Tilt=%.1f\n", flirPan, flirTilt);
     XPLMDebugString(msg);
     
-    // Create rotation matrices (forum method)
-    Matrix3x3 aircraftMat = CreateAircraftMatrix(heading, pitch, roll);
-    Matrix3x3 flirMat = CreateFLIRMatrix(flirPan, flirTilt);
+    // Use FLIR camera's coordinate system directly (matches camera implementation)
+    float worldHeading = heading + flirPan;  // Same as camera: planeHeading + gCameraPan
+    float worldPitch = flirTilt;             // Same as camera: gCameraTilt
     
-    // Combine matrices: worldMat = aircraftMat * flirMat
-    Matrix3x3 worldMat = MultiplyMatrix(aircraftMat, flirMat);
+    // Convert to direction vector using simple trigonometry (X-Plane coordinates)
+    float headingRad = worldHeading * M_PI / 180.0f;
+    float pitchRad = worldPitch * M_PI / 180.0f;
     
-    // Get direction vector: dir = worldMat * Z_DIR where Z_DIR = (0,0,-1)
-    Vector3 zDir = {0.0f, 0.0f, -1.0f}; // Down the gimbal boresight
-    Vector3 worldDirection = MultiplyMatrixVector(worldMat, zDir);
+    Vector3 worldDirection;
+    // X-Plane: +X=East, +Z=South, +Y=Up
+    worldDirection.x = sin(headingRad) * cos(pitchRad);   // East component
+    worldDirection.y = -sin(pitchRad);                    // Down component (negative for downward pitch)
+    worldDirection.z = cos(headingRad) * cos(pitchRad);   // South component
     
     snprintf(msg, sizeof(msg), 
         "MATRIX_TEST: World direction vector = (%.3f, %.3f, %.3f)\n",
@@ -362,8 +365,8 @@ static void RunMatrixTest(void)
             expectedRange, groundRange, rangeError);
         XPLMDebugString(msg);
         
-        // Check 2: Bearing vs pan angle consistency  
-        float expectedBearing = heading + flirPan; // Aircraft heading + FLIR pan
+        // Check 2: Bearing vs world heading consistency  
+        float expectedBearing = worldHeading; // Should match calculated world heading
         if (expectedBearing > 180.0f) expectedBearing -= 360.0f;
         if (expectedBearing < -180.0f) expectedBearing += 360.0f;
         
