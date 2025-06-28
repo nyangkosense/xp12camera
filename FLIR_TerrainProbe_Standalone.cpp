@@ -20,6 +20,9 @@
 #include "XPLMProcessing.h"
 #include "XPLMScenery.h"
 
+// Need these for modern flight loop API
+static XPLMFlightLoopID gFlightLoopID = NULL;
+
 // Terrain probe
 static XPLMProbeRef gTerrainProbe = NULL;
 
@@ -57,7 +60,7 @@ static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ);
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 {
     strcpy(outName, "FLIR Terrain Probe");
-    strcpy(outSig, "flir.terrain.probe.standalone");
+    strcpy(outSig, "terrain.probe.v2.standalone");
     strcpy(outDesc, "Precision FLIR targeting using terrain probing");
 
     // Initialize aircraft datarefs
@@ -99,20 +102,40 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
         return 0;
     }
 
-    // Register hotkey for target designation
-    XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "FLIR: Probe Target", ProbeTerrainTarget, NULL);
+    // Register hotkey for target designation - using TAB to avoid SPACEBAR conflict with FLIR
+    XPLMRegisterHotKey(XPLM_VK_TAB, xplm_DownFlag, "Terrain: Probe Target", ProbeTerrainTarget, NULL);
     
-    // Register flight loop for missile guidance at 50Hz for precision
-    XPLMRegisterFlightLoopCallback(GuideMissileToTarget, 0.02f, NULL);
+    // Register flight loop using modern API for better reliability
+    XPLMCreateFlightLoop_t flightLoopParams;
+    flightLoopParams.structSize = sizeof(XPLMCreateFlightLoop_t);
+    flightLoopParams.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
+    flightLoopParams.callbackFunc = GuideMissileToTarget;
+    flightLoopParams.refcon = NULL;
+    
+    gFlightLoopID = XPLMCreateFlightLoop(&flightLoopParams);
+    if (gFlightLoopID) {
+        XPLMScheduleFlightLoop(gFlightLoopID, 0.02f, 1); // Start in 0.02 seconds, repeat
+        XPLMDebugString("TERRAIN PROBE: Modern flight loop created and scheduled\n");
+    } else {
+        XPLMDebugString("TERRAIN PROBE: Failed to create modern flight loop, trying legacy...\n");
+        // Fallback to legacy API
+        XPLMRegisterFlightLoopCallback(GuideMissileToTarget, 0.02f, NULL);
+    }
 
     XPLMDebugString("TERRAIN PROBE: Plugin loaded successfully\n");
-    XPLMDebugString("TERRAIN PROBE: SPACEBAR=Probe terrain target under FLIR crosshair\n");
+    XPLMDebugString("TERRAIN PROBE: Flight loop registered - should start running now\n");
+    XPLMDebugString("TERRAIN PROBE: TAB=Probe terrain target (changed from SPACEBAR to avoid conflicts)\n");
 
     return 1;
 }
 
 PLUGIN_API void XPluginStop(void) 
 {
+    if (gFlightLoopID) {
+        XPLMDestroyFlightLoop(gFlightLoopID);
+        gFlightLoopID = NULL;
+    }
+    
     if (gTerrainProbe) {
         XPLMDestroyProbe(gTerrainProbe);
         gTerrainProbe = NULL;
@@ -283,10 +306,17 @@ static void ProbeTerrainTarget(void* inRefcon)
 // Enhanced missile guidance using precise terrain coordinates
 static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon)
 {
+    // Debug: Immediate confirmation that flight loop is running
+    static bool firstRun = true;
+    if (firstRun) {
+        XPLMDebugString("TERRAIN PROBE: *** FLIGHT LOOP IS RUNNING! ***\n");
+        firstRun = false;
+    }
+    
     // Debug: Check if we even have a target
     static float targetDebugTimer = 0.0f;
     targetDebugTimer += inElapsedSinceLastCall;
-    if (targetDebugTimer >= 5.0f) {
+    if (targetDebugTimer >= 3.0f) {  // More frequent debugging
         char msg[256];
         snprintf(msg, sizeof(msg), "TERRAIN PROBE: Flight loop running, target valid=%s\n", 
             gTargetValid ? "YES" : "NO");
@@ -294,7 +324,10 @@ static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedT
         targetDebugTimer = 0.0f;
     }
     
-    if (!gTargetValid) return -1.0f;
+    if (!gTargetValid) {
+        // No target, but continue flight loop
+        return 0.02f; // Continue at 50Hz even without target
+    }
     
     // Get current weapon position
     float weaponX = XPLMGetDataf(gWeaponX);
