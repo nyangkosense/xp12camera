@@ -32,6 +32,7 @@ static XPLMDataRef gAircraftY = NULL;
 static XPLMDataRef gAircraftZ = NULL;
 static XPLMDataRef gAircraftHeading = NULL;
 static XPLMDataRef gAircraftPitch = NULL;
+static XPLMDataRef gAircraftRoll = NULL;
 
 // FLIR camera datarefs (published by main FLIR plugin)
 static XPLMDataRef gCameraPanDataRef = NULL;
@@ -82,6 +83,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gAircraftZ = XPLMFindDataRef("sim/flightmodel/position/local_z");
     gAircraftHeading = XPLMFindDataRef("sim/flightmodel/position/psi");
     gAircraftPitch = XPLMFindDataRef("sim/flightmodel/position/theta");
+    gAircraftRoll = XPLMFindDataRef("sim/flightmodel/position/phi");
     
     // Try to find FLIR camera datarefs (published by main FLIR plugin)
     gCameraPanDataRef = XPLMFindDataRef("flir/camera/pan");
@@ -233,7 +235,114 @@ static bool FindPreciseTarget(float startX, float startY, float startZ, float di
     return false;
 }
 
-// Use precise binary search to find FLIR terrain intersection
+// Proper 3D rotation matrix calculation for FLIR direction
+static void CalculateProperDirection(float acHeading, float acPitch, float acRoll, float cameraPan, float cameraTilt, float* dirX, float* dirY, float* dirZ)
+{
+    // Convert to radians
+    float headingRad = acHeading * M_PI / 180.0f;
+    float pitchRad = acPitch * M_PI / 180.0f;
+    float rollRad = acRoll * M_PI / 180.0f;
+    float panRad = cameraPan * M_PI / 180.0f;
+    float tiltRad = cameraTilt * M_PI / 180.0f;
+    
+    // Aircraft orientation matrix components
+    float cosH = cos(headingRad), sinH = sin(headingRad);
+    float cosP = cos(pitchRad), sinP = sin(pitchRad);
+    float cosR = cos(rollRad), sinR = sin(rollRad);
+    
+    // Camera gimbal matrix components
+    float cosPan = cos(panRad), sinPan = sin(panRad);
+    float cosTilt = cos(tiltRad), sinTilt = sin(tiltRad);
+    
+    // Forward vector in camera's local space (camera points forward along -Z initially)
+    float localX = 0.0f;
+    float localY = 0.0f;
+    float localZ = -1.0f; // Camera points forward
+    
+    // Apply camera gimbal rotation (tilt then pan)
+    float tiltedX = localX;
+    float tiltedY = localY * cosTilt - localZ * sinTilt;
+    float tiltedZ = localY * sinTilt + localZ * cosTilt;
+    
+    float gimbalX = tiltedX * cosPan + tiltedZ * sinPan;
+    float gimbalY = tiltedY;
+    float gimbalZ = -tiltedX * sinPan + tiltedZ * cosPan;
+    
+    // Apply aircraft rotation matrix (ZYX Euler angles)
+    // X-Plane coordinate system: +X = East, +Y = Up, +Z = South
+    *dirX = gimbalX * (cosH * cosP) + gimbalY * (sinH * sinR - cosH * sinP * cosR) + gimbalZ * (sinH * cosR + cosH * sinP * sinR);
+    *dirY = gimbalX * (-sinP) + gimbalY * (cosP * cosR) + gimbalZ * (cosP * sinR);
+    *dirZ = gimbalX * (sinH * cosP) + gimbalY * (-cosH * sinR - sinH * sinP * cosR) + gimbalZ * (cosH * cosR - sinH * sinP * sinR);
+    
+    // Debug output
+    char rotMsg[512];
+    snprintf(rotMsg, sizeof(rotMsg), 
+        "TERRAIN PROBE: 3D ROTATION - Aircraft(H=%.1f° P=%.1f° R=%.1f°) Camera(Pan=%.1f° Tilt=%.1f°) -> Dir(%.3f,%.3f,%.3f)\n",
+        acHeading, acPitch, acRoll, cameraPan, cameraTilt, *dirX, *dirY, *dirZ);
+    XPLMDebugString(rotMsg);
+}
+
+// Direct probe ray casting with detailed debug output
+static bool DirectProbeRayCast(float startX, float startY, float startZ, float dirX, float dirY, float dirZ, float* outX, float* outY, float* outZ, float* outRange)
+{
+    if (!gTerrainProbe) return false;
+    
+    XPLMProbeInfo_t probeInfo;
+    probeInfo.structSize = sizeof(XPLMProbeInfo_t);
+    
+    // Cast ray in steps, with detailed logging
+    float stepSize = 100.0f; // 100m steps
+    float maxRange = 50000.0f; // 50km max
+    
+    XPLMDebugString("TERRAIN PROBE: Starting direct ray cast...\n");
+    
+    for (float range = 100.0f; range <= maxRange; range += stepSize) {
+        float rayX = startX + range * dirX;
+        float rayY = startY + range * dirY;
+        float rayZ = startZ + range * dirZ;
+        
+        XPLMProbeResult result = XPLMProbeTerrainXYZ(gTerrainProbe, rayX, rayY, rayZ, &probeInfo);
+        
+        // Debug every 1km
+        if (((int)range % 1000) == 0) {
+            char stepMsg[256];
+            snprintf(stepMsg, sizeof(stepMsg), 
+                "TERRAIN PROBE: Step %.0fkm - Ray(%.1f,%.1f,%.1f) Result=%d\n",
+                range/1000.0f, rayX, rayY, rayZ, (int)result);
+            XPLMDebugString(stepMsg);
+        }
+        
+        if (result == xplm_ProbeHitTerrain) {
+            float terrainY = probeInfo.locationY;
+            
+            char hitMsg[256];
+            snprintf(hitMsg, sizeof(hitMsg), 
+                "TERRAIN PROBE: HIT! Range=%.0fm RayY=%.1f TerrainY=%.1f Diff=%.1fm\n",
+                range, rayY, terrainY, rayY - terrainY);
+            XPLMDebugString(hitMsg);
+            
+            if (rayY <= terrainY + 50.0f) { // Within 50m of terrain
+                *outX = probeInfo.locationX;
+                *outY = probeInfo.locationY;
+                *outZ = probeInfo.locationZ;
+                *outRange = range;
+                
+                char successMsg[256];
+                snprintf(successMsg, sizeof(successMsg), 
+                    "TERRAIN PROBE: SUCCESS! Target at (%.2f,%.2f,%.2f) range=%.0fm %s\n",
+                    *outX, *outY, *outZ, range, probeInfo.is_wet ? "WATER" : "LAND");
+                XPLMDebugString(successMsg);
+                
+                return true;
+            }
+        }
+    }
+    
+    XPLMDebugString("TERRAIN PROBE: Direct ray cast failed - no intersection found\n");
+    return false;
+}
+
+// Use proper 3D rotation matrices to find FLIR terrain intersection
 static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ)
 {
     // Get FLIR camera angles
@@ -241,10 +350,8 @@ static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ)
     bool cameraActive;
     
     if (!GetFLIRAngles(&cameraPan, &cameraTilt, &cameraActive)) {
-        // Fallback to aircraft direction if FLIR not available
         cameraPan = 0.0f;
         cameraTilt = 0.0f;
-        cameraActive = true;
         XPLMDebugString("TERRAIN PROBE: Using aircraft direction (FLIR not available)\n");
     }
     
@@ -254,64 +361,34 @@ static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ)
     float acZ = XPLMGetDataf(gAircraftZ);
     float acHeading = XPLMGetDataf(gAircraftHeading);
     float acPitch = XPLMGetDataf(gAircraftPitch);
+    float acRoll = XPLMGetDataf(gAircraftRoll);
     
-    // Convert to radians
-    float headingRad = acHeading * M_PI / 180.0f;
-    float pitchRad = acPitch * M_PI / 180.0f;
-    float panRad = cameraPan * M_PI / 180.0f;
-    float tiltRad = cameraTilt * M_PI / 180.0f;
+    char posMsg[256];
+    snprintf(posMsg, sizeof(posMsg), "TERRAIN PROBE: Aircraft pos=(%.1f,%.1f,%.1f)\n", acX, acY, acZ);
+    XPLMDebugString(posMsg);
     
-    // Note: Future expansion for full 3D rotation matrices would use these
-    // float cosH = cos(headingRad), sinH = sin(headingRad);
-    // float cosP = cos(pitchRad), sinP = sin(pitchRad);
-    // float cosPan = cos(panRad), sinPan = sin(panRad);
-    // float cosTilt = cos(tiltRad), sinTilt = sin(tiltRad);
+    // Calculate proper 3D direction vector
+    float dirX, dirY, dirZ;
+    CalculateProperDirection(acHeading, acPitch, acRoll, cameraPan, cameraTilt, &dirX, &dirY, &dirZ);
     
-    // Combined rotation: aircraft orientation + gimbal orientation
-    // This is a simplified version - proper 3D rotation matrices would be better
-    float totalHeading = headingRad + panRad;
-    float totalPitch = pitchRad + tiltRad;
-    
-    // Direction vector calculation - FIXED
-    // In X-Plane: +Y is UP, -Y is DOWN
-    // When aircraft pitches down (negative pitch), we want to point more downward
-    // When FLIR tilts down (negative tilt), we want to point more downward
-    
-    float dirX = sin(totalHeading) * cos(totalPitch);
-    float dirY = sin(totalPitch);  // Positive pitch = up, negative pitch = down
-    float dirZ = cos(totalHeading) * cos(totalPitch);
-    
-    // FLIR typically points downward relative to aircraft, so adjust
-    // If total pitch is positive (pointing up), force it to point down
-    if (dirY > 0.1f) {  // If pointing significantly upward
-        dirY = -0.5f;   // Force downward direction
-        XPLMDebugString("TERRAIN PROBE: Forced direction downward (was pointing up)\n");
+    // Try direct probe ray casting first
+    float range;
+    if (DirectProbeRayCast(acX, acY, acZ, dirX, dirY, dirZ, outX, outY, outZ, &range)) {
+        return true;
     }
     
-    // Debug direction
-    char directionInfo[256];
-    snprintf(directionInfo, sizeof(directionInfo), 
-        "TERRAIN PROBE: totalPitch=%.1f° dirY=%.3f %s\n",
-        totalPitch * 180.0f / M_PI, dirY, (dirY < 0) ? "DOWN" : "UP");
-    XPLMDebugString(directionInfo);
-    
-    char dirMsg[256];
-    snprintf(dirMsg, sizeof(dirMsg), "TERRAIN PROBE: Direction vector=(%.3f,%.3f,%.3f) heading=%.1f° pitch=%.1f° pan=%.1f° tilt=%.1f°\n",
-        dirX, dirY, dirZ, acHeading, acPitch, cameraPan, cameraTilt);
-    XPLMDebugString(dirMsg);
-    
-    // Use precise binary search to find terrain intersection
-    float range;
+    // If direct method fails, try the binary search method
+    XPLMDebugString("TERRAIN PROBE: Trying binary search method...\n");
     if (FindPreciseTarget(acX, acY, acZ, dirX, dirY, dirZ, outX, outY, outZ, &range)) {
-        char msg[512];
+        char msg[256];
         snprintf(msg, sizeof(msg), 
-            "TERRAIN PROBE: Precise hit at (%.2f, %.2f, %.2f) range=%.1fm pan=%.1f° tilt=%.1f°\n",
-            *outX, *outY, *outZ, range, cameraPan, cameraTilt);
+            "TERRAIN PROBE: Binary search hit at (%.2f,%.2f,%.2f) range=%.0fm\n",
+            *outX, *outY, *outZ, range);
         XPLMDebugString(msg);
         return true;
     }
     
-    XPLMDebugString("TERRAIN PROBE: No terrain intersection found\n");
+    XPLMDebugString("TERRAIN PROBE: Both methods failed - no terrain intersection found\n");
     return false;
 }
 
