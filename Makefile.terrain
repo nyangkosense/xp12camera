@@ -1,0 +1,44 @@
+# Makefile for FLIR Terrain Test Plugin
+
+# Compiler settings
+CXX = x86_64-w64-mingw32-g++
+CXXFLAGS = -std=c++11 -Wall -O2 -fPIC -DXPLM200=1 -DXPLM210=1 -DXPLM300=1 -DXPLM301=1 -DXPLM302=1 -DXPLM400=1
+INCLUDES = -ISDK/CHeaders/XPLM -ISDK/CHeaders/Widgets -DIBM=1 -DWIN32=1 -D_WIN32=1
+
+# Linker settings
+LDFLAGS = -shared -static-libgcc -static-libstdc++ -Wl,--kill-at -Wl,--no-undefined
+LIBS = -LSDK/Libraries/Win -lXPLM_64 -lXPWidgets_64 -lopengl32 -lgdi32
+
+# Source files
+TERRAIN_SOURCES = FLIR_TerrainFinder.cpp FLIR_TerrainTest.cpp
+TERRAIN_OBJECTS = $(TERRAIN_SOURCES:.cpp=.o)
+
+# Output
+TERRAIN_TARGET = build/FLIR_TerrainTest/win_x64/FLIR_TerrainTest.xpl
+
+# Default target
+all: $(TERRAIN_TARGET)
+
+# Create output directory
+build/FLIR_TerrainTest/win_x64:
+	mkdir -p build/FLIR_TerrainTest/win_x64
+
+# Compile source files
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+# Link the plugin
+$(TERRAIN_TARGET): $(TERRAIN_OBJECTS) build/FLIR_TerrainTest/win_x64
+	$(CXX) $(TERRAIN_OBJECTS) $(LDFLAGS) $(LIBS) -o $(TERRAIN_TARGET)
+	@echo "FLIR Terrain Test Plugin built successfully: $(TERRAIN_TARGET)"
+
+# Clean build files
+clean:
+	rm -f $(TERRAIN_OBJECTS)
+	rm -f $(TERRAIN_TARGET)
+
+# Clean all
+cleanall: clean
+	rm -rf build/FLIR_TerrainTest
+
+.PHONY: all clean cleanall
