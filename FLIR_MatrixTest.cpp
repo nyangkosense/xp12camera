@@ -27,9 +27,8 @@ typedef struct {
     float x, y, z;
 } Vector3;
 
-// Flight loop for automatic testing
-static XPLMFlightLoopID gTestFlightLoop = NULL;
-static bool gTestCompleted = false;
+// Test hotkey for manual triggering
+static XPLMHotKeyID gTestKey = NULL;
 
 // Aircraft datarefs
 static XPLMDataRef gAircraftX = NULL;
@@ -56,7 +55,7 @@ Matrix3x3 CreateAircraftMatrix(float heading, float pitch, float roll);
 Matrix3x3 CreateFLIRMatrix(float pan, float tilt);
 
 // Test functions
-static float TestMatrixFlightLoop(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
+static void TestCallback(void* inRefcon);
 static void RunMatrixTest(void);
 bool RaycastToTerrain(Vector3 start, Vector3 direction, Vector3* hitPoint);
 
@@ -92,26 +91,17 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
         return 0;
     }
 
-    // Schedule test
-    XPLMCreateFlightLoop_t flightLoopParams;
-    flightLoopParams.structSize = sizeof(XPLMCreateFlightLoop_t);
-    flightLoopParams.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
-    flightLoopParams.callbackFunc = TestMatrixFlightLoop;
-    flightLoopParams.refcon = NULL;
-    
-    gTestFlightLoop = XPLMCreateFlightLoop(&flightLoopParams);
-    if (gTestFlightLoop) {
-        XPLMScheduleFlightLoop(gTestFlightLoop, 2.0f, 1); // Start after 2 seconds
-        XPLMDebugString("MATRIX_TEST: Test scheduled for 2 seconds\n");
-    }
+    // Register hotkey for manual testing
+    gTestKey = XPLMRegisterHotKey(XPLM_VK_F5, xplm_DownFlag, "Matrix Test", TestCallback, NULL);
+    XPLMDebugString("MATRIX_TEST: Press F5 to test current FLIR direction\n");
 
     return 1;
 }
 
 PLUGIN_API void XPluginStop(void)
 {
-    if (gTestFlightLoop) {
-        XPLMDestroyFlightLoop(gTestFlightLoop);
+    if (gTestKey) {
+        XPLMUnregisterHotKey(gTestKey);
     }
     if (gTerrainProbe) {
         XPLMDestroyProbe(gTerrainProbe);
@@ -123,14 +113,10 @@ PLUGIN_API void XPluginDisable(void) { }
 PLUGIN_API int XPluginEnable(void) { return 1; }
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) { }
 
-// Flight loop - run test once
-static float TestMatrixFlightLoop(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon)
+// Hotkey callback for manual testing
+static void TestCallback(void* inRefcon)
 {
-    if (!gTestCompleted) {
-        gTestCompleted = true;
-        RunMatrixTest();
-    }
-    return 0;
+    RunMatrixTest();
 }
 
 // Matrix operations
@@ -362,6 +348,54 @@ static void RunMatrixTest(void)
             "MATRIX_TEST: Target - SlantRange=%.1fm GroundRange=%.1fm Bearing=%.1f°\n",
             slantRange, groundRange, bearing);
         XPLMDebugString(msg);
+        
+        // Coordinate validation checks
+        XPLMDebugString("MATRIX_TEST: Validating coordinates...\n");
+        
+        // Check 1: Range vs tilt angle consistency
+        float expectedRange = acY / tan(-flirTilt * M_PI / 180.0f); // Simple trig for downward tilt
+        float rangeDifference = fabs(groundRange - expectedRange);
+        float rangeError = (expectedRange > 0) ? (rangeDifference / expectedRange) * 100.0f : 100.0f;
+        
+        snprintf(msg, sizeof(msg), 
+            "MATRIX_TEST: Range check - Expected=%.1fm Actual=%.1fm Error=%.1f%%\n",
+            expectedRange, groundRange, rangeError);
+        XPLMDebugString(msg);
+        
+        // Check 2: Bearing vs pan angle consistency  
+        float expectedBearing = heading + flirPan; // Aircraft heading + FLIR pan
+        if (expectedBearing > 180.0f) expectedBearing -= 360.0f;
+        if (expectedBearing < -180.0f) expectedBearing += 360.0f;
+        
+        float bearingDifference = fabs(bearing - expectedBearing);
+        if (bearingDifference > 180.0f) bearingDifference = 360.0f - bearingDifference;
+        
+        snprintf(msg, sizeof(msg), 
+            "MATRIX_TEST: Bearing check - Expected=%.1f° Actual=%.1f° Error=%.1f°\n",
+            expectedBearing, bearing, bearingDifference);
+        XPLMDebugString(msg);
+        
+        // Check 3: Target should be below aircraft for downward tilt
+        bool targetBelowAircraft = (hitPoint.y < acY);
+        
+        snprintf(msg, sizeof(msg), 
+            "MATRIX_TEST: Altitude check - Aircraft=%.1fm Target=%.1fm Below=%s\n",
+            acY, hitPoint.y, targetBelowAircraft ? "YES" : "NO");
+        XPLMDebugString(msg);
+        
+        // Overall validation result
+        bool validRange = (rangeError < 50.0f); // Allow 50% error for now
+        bool validBearing = (bearingDifference < 30.0f); // Allow 30° error
+        bool validAltitude = targetBelowAircraft && (flirTilt < 0); // Must be below for downward tilt
+        
+        if (validRange && validBearing && validAltitude) {
+            XPLMDebugString("MATRIX_TEST: ✓ VALIDATION PASSED - Coordinates appear correct!\n");
+        } else {
+            XPLMDebugString("MATRIX_TEST: ✗ VALIDATION FAILED - Coordinates may be incorrect:\n");
+            if (!validRange) XPLMDebugString("MATRIX_TEST:   - Range calculation seems off\n");
+            if (!validBearing) XPLMDebugString("MATRIX_TEST:   - Bearing doesn't match FLIR pan\n");
+            if (!validAltitude) XPLMDebugString("MATRIX_TEST:   - Target altitude inconsistent with tilt\n");
+        }
         
         XPLMDebugString("MATRIX_TEST: SUCCESS - Coordinates ready for missile guidance!\n");
     } else {
