@@ -345,7 +345,8 @@ static void RunMatrixTest(void)
         
         float slantRange = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
         float groundRange = sqrt(deltaX*deltaX + deltaZ*deltaZ);
-        float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI; // -deltaZ because +Z=South
+        float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI; // X-Plane: -Z=North, so use -deltaZ for North reference
+        if (bearing < 0.0f) bearing += 360.0f; // Convert to 0-360° range
         
         snprintf(msg, sizeof(msg), 
             "MATRIX_TEST: Target - SlantRange=%.1fm GroundRange=%.1fm Bearing=%.1f°\n",
@@ -367,8 +368,8 @@ static void RunMatrixTest(void)
         
         // Check 2: Bearing vs world heading consistency  
         float expectedBearing = worldHeading; // Should match calculated world heading
-        if (expectedBearing > 180.0f) expectedBearing -= 360.0f;
-        if (expectedBearing < -180.0f) expectedBearing += 360.0f;
+        if (expectedBearing < 0.0f) expectedBearing += 360.0f; // Convert to 0-360° range
+        if (expectedBearing >= 360.0f) expectedBearing -= 360.0f;
         
         float bearingDifference = fabs(bearing - expectedBearing);
         if (bearingDifference > 180.0f) bearingDifference = 360.0f - bearingDifference;
