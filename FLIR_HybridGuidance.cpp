@@ -305,26 +305,58 @@ static bool CalculateCrosshairTarget(float* outX, float* outY, float* outZ)
     float panRad = pan * M_PI / 180.0f;
     float tiltRad = tilt * M_PI / 180.0f;
     
-    // Calculate direction (simplified - could be improved with full 3D rotation)
-    float totalHeading = headingRad + panRad;
-    float totalPitch = tiltRad; // Simplified
+    // Get aircraft orientation
+    float acPitch = XPLMGetDataf(gAircraftPitch);
+    float acRoll = XPLMGetDataf(gAircraftRoll);
     
-    float dirX = sin(totalHeading) * cos(totalPitch);
-    float dirY = sin(totalPitch);
-    float dirZ = cos(totalHeading) * cos(totalPitch);
+    // Convert all angles to radians
+    float pitchRad = acPitch * M_PI / 180.0f;
+    float rollRad = acRoll * M_PI / 180.0f;
     
-    // Cast ray to reasonable range (assume ground at Y=0 or some distance ahead)
-    float range = 5000.0f; // 5km default range
+    // Calculate turret direction in aircraft local coordinates
+    // Pan = rotation around vertical axis, Tilt = rotation around horizontal axis
+    float localDirX = sin(panRad) * cos(tiltRad);
+    float localDirY = -sin(tiltRad); // Negative because positive tilt points down
+    float localDirZ = cos(panRad) * cos(tiltRad);
     
-    if (dirY < -0.1f) {
-        // Pointing downward - intersect with ground
-        range = -acY / dirY;
-        range = fminf(range, 10000.0f); // Max 10km
+    // Transform turret direction by aircraft orientation (heading, pitch, roll)
+    // Apply heading rotation (yaw)
+    float temp1X = localDirX * cos(headingRad) - localDirZ * sin(headingRad);
+    float temp1Y = localDirY;
+    float temp1Z = localDirX * sin(headingRad) + localDirZ * cos(headingRad);
+    
+    // Apply pitch rotation
+    float temp2X = temp1X * cos(pitchRad) + temp1Y * sin(pitchRad);
+    float temp2Y = -temp1X * sin(pitchRad) + temp1Y * cos(pitchRad);
+    float temp2Z = temp1Z;
+    
+    // Apply roll rotation
+    float dirX = temp2X;
+    float dirY = temp2Y * cos(rollRad) - temp2Z * sin(rollRad);
+    float dirZ = temp2Y * sin(rollRad) + temp2Z * cos(rollRad);
+    
+    // Calculate target position from turret location (underneath aircraft)
+    float turretX = acX;
+    float turretY = acY - 3.0f; // Turret is 3m below aircraft center
+    float turretZ = acZ;
+    
+    // Determine range based on turret aim direction
+    float range = 5000.0f; // Default 5km range
+    
+    if (dirY < -0.05f) {
+        // Pointing downward - intersect with ground (Y=0)
+        range = -turretY / dirY;
+        range = fminf(range, 15000.0f); // Max 15km range
+        range = fmaxf(range, 100.0f);   // Min 100m range
+    } else if (dirY > 0.05f) {
+        // Pointing upward - use shorter range for air targets
+        range = 3000.0f; // 3km for air targets
     }
+    // If nearly horizontal (dirY near 0), use default 5km
     
-    *outX = acX + dirX * range;
-    *outY = acY + dirY * range;
-    *outZ = acZ + dirZ * range;
+    *outX = turretX + dirX * range;
+    *outY = turretY + dirY * range;
+    *outZ = turretZ + dirZ * range;
     
     // Debug output
     static float debugTimer = 0.0f;
