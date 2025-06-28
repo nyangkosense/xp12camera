@@ -37,7 +37,10 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     strcpy(outSig, "flir.coordinate.test");
     strcpy(outDesc, "Test coordinate systems and ray casting");
 
+    XPLMDebugString("COORD_TEST: XPluginStart called - Plugin is starting!\n");
+
     // Find aircraft datarefs
+    XPLMDebugString("COORD_TEST: Finding aircraft datarefs...\n");
     gAircraftX = XPLMFindDataRef("sim/flightmodel/position/local_x");
     gAircraftY = XPLMFindDataRef("sim/flightmodel/position/local_y");
     gAircraftZ = XPLMFindDataRef("sim/flightmodel/position/local_z");
@@ -47,13 +50,16 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
         XPLMDebugString("COORD_TEST: ERROR - Aircraft datarefs not found!\n");
         return 0;
     }
+    XPLMDebugString("COORD_TEST: Aircraft datarefs found successfully\n");
 
     // Create terrain probe
+    XPLMDebugString("COORD_TEST: Creating terrain probe...\n");
     gTerrainProbe = XPLMCreateProbe(xplm_ProbeY);
     if (!gTerrainProbe) {
         XPLMDebugString("COORD_TEST: ERROR - Failed to create terrain probe!\n");
         return 0;
     }
+    XPLMDebugString("COORD_TEST: Terrain probe created successfully\n");
 
     // Register flight loop for automatic testing
     XPLMCreateFlightLoop_t flightLoopParams;
@@ -66,6 +72,17 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     if (gTestFlightLoop) {
         XPLMScheduleFlightLoop(gTestFlightLoop, 3.0f, 1); // Start test after 3 seconds
         XPLMDebugString("COORD_TEST: Plugin loaded - Will run coordinate test automatically in 3 seconds\n");
+    
+    // Also run a quick test immediately to verify basic functionality
+    XPLMDebugString("COORD_TEST: Running immediate basic test...\n");
+    
+    float testX = XPLMGetDataf(gAircraftX);
+    float testY = XPLMGetDataf(gAircraftY);
+    float testZ = XPLMGetDataf(gAircraftZ);
+    
+    char immMsg[256];
+    snprintf(immMsg, sizeof(immMsg), "COORD_TEST: Immediate read - X=%.2f Y=%.2f Z=%.2f\n", testX, testY, testZ);
+    XPLMDebugString(immMsg);
     } else {
         XPLMDebugString("COORD_TEST: ERROR - Failed to create flight loop\n");
     }

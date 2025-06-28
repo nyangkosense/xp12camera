@@ -1,0 +1,372 @@
+/*
+ * FLIR_MatrixTest.cpp
+ * 
+ * Implement the exact forum method using rotation matrices
+ * Goal: "Shoot laser" -> get coordinates using proper math
+ */
+
+#include "XPLMDisplay.h"
+#include "XPLMUtilities.h"
+#include "XPLMDataAccess.h"
+#include "XPLMScenery.h"
+#include "XPLMProcessing.h"
+#include <stdio.h>
+#include <math.h>
+#include <string.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Simple 3x3 matrix and 3D vector structs
+typedef struct {
+    float m[3][3];
+} Matrix3x3;
+
+typedef struct {
+    float x, y, z;
+} Vector3;
+
+// Flight loop for automatic testing
+static XPLMFlightLoopID gTestFlightLoop = NULL;
+static bool gTestCompleted = false;
+
+// Aircraft datarefs
+static XPLMDataRef gAircraftX = NULL;
+static XPLMDataRef gAircraftY = NULL;
+static XPLMDataRef gAircraftZ = NULL;
+static XPLMDataRef gAircraftHeading = NULL;
+static XPLMDataRef gAircraftPitch = NULL;
+static XPLMDataRef gAircraftRoll = NULL;
+
+// FLIR datarefs
+static XPLMDataRef gFLIRPan = NULL;
+static XPLMDataRef gFLIRTilt = NULL;
+
+// Terrain probe
+static XPLMProbeRef gTerrainProbe = NULL;
+
+// Matrix operations
+Matrix3x3 CreateRotationMatrixY(float angle_rad);
+Matrix3x3 CreateRotationMatrixX(float angle_rad);
+Matrix3x3 CreateRotationMatrixZ(float angle_rad);
+Matrix3x3 MultiplyMatrix(Matrix3x3 a, Matrix3x3 b);
+Vector3 MultiplyMatrixVector(Matrix3x3 m, Vector3 v);
+Matrix3x3 CreateAircraftMatrix(float heading, float pitch, float roll);
+Matrix3x3 CreateFLIRMatrix(float pan, float tilt);
+
+// Test functions
+static float TestMatrixFlightLoop(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
+static void RunMatrixTest(void);
+bool RaycastToTerrain(Vector3 start, Vector3 direction, Vector3* hitPoint);
+
+PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
+{
+    strcpy(outName, "FLIR Matrix Test");
+    strcpy(outSig, "flir.matrix.test");
+    strcpy(outDesc, "Test rotation matrix approach");
+
+    XPLMDebugString("MATRIX_TEST: Starting with rotation matrix approach\n");
+
+    // Find aircraft datarefs
+    gAircraftX = XPLMFindDataRef("sim/flightmodel/position/local_x");
+    gAircraftY = XPLMFindDataRef("sim/flightmodel/position/local_y");
+    gAircraftZ = XPLMFindDataRef("sim/flightmodel/position/local_z");
+    gAircraftHeading = XPLMFindDataRef("sim/flightmodel/position/psi");
+    gAircraftPitch = XPLMFindDataRef("sim/flightmodel/position/theta");
+    gAircraftRoll = XPLMFindDataRef("sim/flightmodel/position/phi");
+
+    // Find FLIR datarefs (may not exist)
+    gFLIRPan = XPLMFindDataRef("flir/camera/pan");
+    gFLIRTilt = XPLMFindDataRef("flir/camera/tilt");
+
+    if (!gAircraftX || !gAircraftY || !gAircraftZ || !gAircraftHeading || !gAircraftPitch || !gAircraftRoll) {
+        XPLMDebugString("MATRIX_TEST: ERROR - Aircraft datarefs not found!\n");
+        return 0;
+    }
+
+    // Create terrain probe
+    gTerrainProbe = XPLMCreateProbe(xplm_ProbeY);
+    if (!gTerrainProbe) {
+        XPLMDebugString("MATRIX_TEST: ERROR - Failed to create terrain probe!\n");
+        return 0;
+    }
+
+    // Schedule test
+    XPLMCreateFlightLoop_t flightLoopParams;
+    flightLoopParams.structSize = sizeof(XPLMCreateFlightLoop_t);
+    flightLoopParams.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
+    flightLoopParams.callbackFunc = TestMatrixFlightLoop;
+    flightLoopParams.refcon = NULL;
+    
+    gTestFlightLoop = XPLMCreateFlightLoop(&flightLoopParams);
+    if (gTestFlightLoop) {
+        XPLMScheduleFlightLoop(gTestFlightLoop, 2.0f, 1); // Start after 2 seconds
+        XPLMDebugString("MATRIX_TEST: Test scheduled for 2 seconds\n");
+    }
+
+    return 1;
+}
+
+PLUGIN_API void XPluginStop(void)
+{
+    if (gTestFlightLoop) {
+        XPLMDestroyFlightLoop(gTestFlightLoop);
+    }
+    if (gTerrainProbe) {
+        XPLMDestroyProbe(gTerrainProbe);
+    }
+    XPLMDebugString("MATRIX_TEST: Plugin stopped\n");
+}
+
+PLUGIN_API void XPluginDisable(void) { }
+PLUGIN_API int XPluginEnable(void) { return 1; }
+PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) { }
+
+// Flight loop - run test once
+static float TestMatrixFlightLoop(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon)
+{
+    if (!gTestCompleted) {
+        gTestCompleted = true;
+        RunMatrixTest();
+    }
+    return 0;
+}
+
+// Matrix operations
+Matrix3x3 CreateRotationMatrixY(float angle_rad)
+{
+    Matrix3x3 m;
+    float c = cos(angle_rad);
+    float s = sin(angle_rad);
+    
+    m.m[0][0] = c;  m.m[0][1] = 0;  m.m[0][2] = s;
+    m.m[1][0] = 0;  m.m[1][1] = 1;  m.m[1][2] = 0;
+    m.m[2][0] = -s; m.m[2][1] = 0;  m.m[2][2] = c;
+    
+    return m;
+}
+
+Matrix3x3 CreateRotationMatrixX(float angle_rad)
+{
+    Matrix3x3 m;
+    float c = cos(angle_rad);
+    float s = sin(angle_rad);
+    
+    m.m[0][0] = 1;  m.m[0][1] = 0;  m.m[0][2] = 0;
+    m.m[1][0] = 0;  m.m[1][1] = c;  m.m[1][2] = -s;
+    m.m[2][0] = 0;  m.m[2][1] = s;  m.m[2][2] = c;
+    
+    return m;
+}
+
+Matrix3x3 CreateRotationMatrixZ(float angle_rad)
+{
+    Matrix3x3 m;
+    float c = cos(angle_rad);
+    float s = sin(angle_rad);
+    
+    m.m[0][0] = c;  m.m[0][1] = -s; m.m[0][2] = 0;
+    m.m[1][0] = s;  m.m[1][1] = c;  m.m[1][2] = 0;
+    m.m[2][0] = 0;  m.m[2][1] = 0;  m.m[2][2] = 1;
+    
+    return m;
+}
+
+Matrix3x3 MultiplyMatrix(Matrix3x3 a, Matrix3x3 b)
+{
+    Matrix3x3 result;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            result.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j];
+        }
+    }
+    return result;
+}
+
+Vector3 MultiplyMatrixVector(Matrix3x3 m, Vector3 v)
+{
+    Vector3 result;
+    result.x = m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z;
+    result.y = m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z;
+    result.z = m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z;
+    return result;
+}
+
+// Create aircraft rotation matrix (X-Plane coordinates: +X=East, +Z=South, +Y=Up)
+Matrix3x3 CreateAircraftMatrix(float heading, float pitch, float roll)
+{
+    // Convert to radians
+    float h = heading * M_PI / 180.0f;
+    float p = pitch * M_PI / 180.0f;
+    float r = roll * M_PI / 180.0f;
+    
+    // X-Plane rotation order: Roll, Pitch, Heading (Z, X, Y)
+    Matrix3x3 rollMat = CreateRotationMatrixZ(r);
+    Matrix3x3 pitchMat = CreateRotationMatrixX(p);
+    Matrix3x3 headingMat = CreateRotationMatrixY(h);
+    
+    // Combine: heading * pitch * roll
+    Matrix3x3 temp = MultiplyMatrix(pitchMat, rollMat);
+    return MultiplyMatrix(headingMat, temp);
+}
+
+// Create FLIR rotation matrix (pan = Y rotation, tilt = X rotation)
+Matrix3x3 CreateFLIRMatrix(float pan, float tilt)
+{
+    float p = pan * M_PI / 180.0f;
+    float t = tilt * M_PI / 180.0f;
+    
+    Matrix3x3 panMat = CreateRotationMatrixY(p);
+    Matrix3x3 tiltMat = CreateRotationMatrixX(t);
+    
+    // Combine: pan * tilt
+    return MultiplyMatrix(panMat, tiltMat);
+}
+
+// Binary search terrain intersection (forum method)
+bool RaycastToTerrain(Vector3 start, Vector3 direction, Vector3* hitPoint)
+{
+    float minRange = 100.0f;
+    float maxRange = 30000.0f;
+    float precision = 1.0f;
+    int maxIterations = 40;
+    
+    XPLMProbeInfo_t probeInfo;
+    probeInfo.structSize = sizeof(XPLMProbeInfo_t);
+    
+    bool foundTerrain = false;
+    int iteration = 0;
+    
+    while ((maxRange - minRange) > precision && iteration < maxIterations) {
+        float currentRange = (minRange + maxRange) / 2.0f;
+        
+        // Calculate test point: start + direction * range
+        Vector3 testPoint;
+        testPoint.x = start.x + direction.x * currentRange;
+        testPoint.y = start.y + direction.y * currentRange;
+        testPoint.z = start.z + direction.z * currentRange;
+        
+        XPLMProbeResult result = XPLMProbeTerrainXYZ(gTerrainProbe, testPoint.x, testPoint.y, testPoint.z, &probeInfo);
+        
+        if (result == xplm_ProbeHitTerrain) {
+            foundTerrain = true;
+            
+            // Check if we're under terrain
+            bool isUnder = (testPoint.y < probeInfo.locationY);
+            
+            if (iteration < 5) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), 
+                    "MATRIX_TEST: Iter=%d Range=%.1f Test(%.1f,%.1f,%.1f) Terrain=%.1f Under=%s\n",
+                    iteration, currentRange, testPoint.x, testPoint.y, testPoint.z, probeInfo.locationY, isUnder ? "YES" : "NO");
+                XPLMDebugString(msg);
+            }
+            
+            if (isUnder) {
+                maxRange = currentRange; // Back up
+            } else {
+                minRange = currentRange; // Go further
+            }
+        } else {
+            minRange = currentRange; // No terrain, go further
+        }
+        
+        iteration++;
+    }
+    
+    if (foundTerrain) {
+        float finalRange = (minRange + maxRange) / 2.0f;
+        hitPoint->x = start.x + direction.x * finalRange;
+        hitPoint->y = start.y + direction.y * finalRange;
+        hitPoint->z = start.z + direction.z * finalRange;
+        
+        char msg[256];
+        snprintf(msg, sizeof(msg), 
+            "MATRIX_TEST: SUCCESS - Hit at (%.1f,%.1f,%.1f) Range=%.1fm after %d iterations\n",
+            hitPoint->x, hitPoint->y, hitPoint->z, finalRange, iteration);
+        XPLMDebugString(msg);
+        
+        return true;
+    }
+    
+    XPLMDebugString("MATRIX_TEST: FAILED - No terrain intersection found\n");
+    return false;
+}
+
+// Main test using rotation matrices
+static void RunMatrixTest(void)
+{
+    XPLMDebugString("MATRIX_TEST: ==========================================\n");
+    XPLMDebugString("MATRIX_TEST: Testing rotation matrix approach\n");
+    
+    // Get aircraft data
+    float acX = XPLMGetDataf(gAircraftX);
+    float acY = XPLMGetDataf(gAircraftY);
+    float acZ = XPLMGetDataf(gAircraftZ);
+    float heading = XPLMGetDataf(gAircraftHeading);
+    float pitch = XPLMGetDataf(gAircraftPitch);
+    float roll = XPLMGetDataf(gAircraftRoll);
+    
+    // Get FLIR data (use defaults if not available)
+    float flirPan = 0.0f;
+    float flirTilt = -15.0f; // 15 degrees down
+    
+    if (gFLIRPan && gFLIRTilt) {
+        flirPan = XPLMGetDataf(gFLIRPan);
+        flirTilt = XPLMGetDataf(gFLIRTilt);
+    }
+    
+    char msg[256];
+    snprintf(msg, sizeof(msg), 
+        "MATRIX_TEST: Aircraft - Pos(%.1f,%.1f,%.1f) Att(H=%.1f P=%.1f R=%.1f)\n",
+        acX, acY, acZ, heading, pitch, roll);
+    XPLMDebugString(msg);
+    
+    snprintf(msg, sizeof(msg), 
+        "MATRIX_TEST: FLIR - Pan=%.1f Tilt=%.1f\n", flirPan, flirTilt);
+    XPLMDebugString(msg);
+    
+    // Create rotation matrices (forum method)
+    Matrix3x3 aircraftMat = CreateAircraftMatrix(heading, pitch, roll);
+    Matrix3x3 flirMat = CreateFLIRMatrix(flirPan, flirTilt);
+    
+    // Combine matrices: worldMat = aircraftMat * flirMat
+    Matrix3x3 worldMat = MultiplyMatrix(aircraftMat, flirMat);
+    
+    // Get direction vector: dir = worldMat * Z_DIR where Z_DIR = (0,0,-1)
+    Vector3 zDir = {0.0f, 0.0f, -1.0f}; // Down the gimbal boresight
+    Vector3 worldDirection = MultiplyMatrixVector(worldMat, zDir);
+    
+    snprintf(msg, sizeof(msg), 
+        "MATRIX_TEST: World direction vector = (%.3f, %.3f, %.3f)\n",
+        worldDirection.x, worldDirection.y, worldDirection.z);
+    XPLMDebugString(msg);
+    
+    // Start position (aircraft)
+    Vector3 startPos = {acX, acY, acZ};
+    
+    // Raycast to terrain
+    Vector3 hitPoint;
+    if (RaycastToTerrain(startPos, worldDirection, &hitPoint)) {
+        // Calculate distance and bearing
+        float deltaX = hitPoint.x - acX;
+        float deltaY = hitPoint.y - acY;
+        float deltaZ = hitPoint.z - acZ;
+        
+        float slantRange = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
+        float groundRange = sqrt(deltaX*deltaX + deltaZ*deltaZ);
+        float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI; // -deltaZ because +Z=South
+        
+        snprintf(msg, sizeof(msg), 
+            "MATRIX_TEST: Target - SlantRange=%.1fm GroundRange=%.1fm Bearing=%.1f°\n",
+            slantRange, groundRange, bearing);
+        XPLMDebugString(msg);
+        
+        XPLMDebugString("MATRIX_TEST: SUCCESS - Coordinates ready for missile guidance!\n");
+    } else {
+        XPLMDebugString("MATRIX_TEST: FAILED - Could not find target coordinates\n");
+    }
+    
+    XPLMDebugString("MATRIX_TEST: ==========================================\n");
+}

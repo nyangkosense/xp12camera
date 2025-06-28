@@ -1,0 +1,44 @@
+# Makefile for FLIR Matrix Test Plugin
+
+# Compiler settings
+CXX = x86_64-w64-mingw32-g++
+CXXFLAGS = -std=c++11 -Wall -O2 -fPIC -DXPLM200=1 -DXPLM210=1 -DXPLM300=1 -DXPLM301=1 -DXPLM302=1 -DXPLM400=1
+INCLUDES = -ISDK/CHeaders/XPLM -ISDK/CHeaders/Widgets -DIBM=1 -DWIN32=1 -D_WIN32=1
+
+# Linker settings
+LDFLAGS = -shared -static-libgcc -static-libstdc++ -Wl,--kill-at -Wl,--no-undefined
+LIBS = -LSDK/Libraries/Win -lXPLM_64 -lXPWidgets_64 -lopengl32 -lgdi32
+
+# Source files
+MATRIX_SOURCES = FLIR_MatrixTest.cpp
+MATRIX_OBJECTS = $(MATRIX_SOURCES:.cpp=.o)
+
+# Output
+MATRIX_TARGET = build/FLIR_MatrixTest/win_x64/FLIR_MatrixTest.xpl
+
+# Default target
+all: $(MATRIX_TARGET)
+
+# Create output directory
+build/FLIR_MatrixTest/win_x64:
+	mkdir -p build/FLIR_MatrixTest/win_x64
+
+# Compile source files
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+# Link the plugin
+$(MATRIX_TARGET): $(MATRIX_OBJECTS) build/FLIR_MatrixTest/win_x64
+	$(CXX) $(MATRIX_OBJECTS) $(LDFLAGS) $(LIBS) -o $(MATRIX_TARGET)
+	@echo "FLIR Matrix Test Plugin built successfully: $(MATRIX_TARGET)"
+
+# Clean build files
+clean:
+	rm -f $(MATRIX_OBJECTS)
+	rm -f $(MATRIX_TARGET)
+
+# Clean all
+cleanall: clean
+	rm -rf build/FLIR_MatrixTest
+
+.PHONY: all clean cleanall
