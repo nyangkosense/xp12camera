@@ -71,9 +71,13 @@ static float gAutoGuidanceStrength = 0.8f; // How aggressively to steer toward c
 static float gMaxSteeringForce = 40.0f;
 static float gWeaponSpeed = 120.0f;
 
-// Missile physics parameters (tuned for "magnet" behavior)
-static float gMaxTurnRate = 80.0f; // degrees per second (based on 25° max fin deflection)
-static float gTargetLeadTime = 0.2f; // seconds ahead to predict (shorter for tighter following)
+// Missile physics parameters (tuned for precision targeting)
+static float gMaxTurnRate = 120.0f; // degrees per second (very aggressive)
+static float gTargetLeadTime = 0.1f; // seconds ahead to predict (very short for precision)
+static float gGravityCompensation = 9.81f; // m/s² upward bias to counter gravity
+static float gProportionalGain = 2.0f; // P term for precise tracking
+static float gIntegralGain = 0.5f; // I term to eliminate steady-state error
+static float gDerivativeGain = 0.1f; // D term for smooth approach (shorter for tighter following)
 
 // Target coordinates (calculated from FLIR)
 static float gTargetX = 0.0f;
@@ -85,6 +89,14 @@ static bool gTargetValid = false;
 static float gTargetVX = 0.0f;
 static float gTargetVY = 0.0f;
 static float gTargetVZ = 0.0f;
+
+// PID error tracking for precision guidance
+static float gErrorIntegralX = 0.0f;
+static float gErrorIntegralY = 0.0f;
+static float gErrorIntegralZ = 0.0f;
+static float gPrevErrorX = 0.0f;
+static float gPrevErrorY = 0.0f;
+static float gPrevErrorZ = 0.0f;
 
 // Function prototypes
 static void SetGuidanceMode(GuidanceMode mode);
@@ -298,57 +310,68 @@ static void DecreaseAutoGuidance(void* inRefcon)
     XPLMDebugString(msg);
 }
 
-// Calculate where center screen is pointing using X-Plane's built-in coordinates
-static bool CalculateCrosshairTarget(float* outX, float* outY, float* outZ)
+// Calculate crosshair direction vector relative to missile position
+static bool CalculateCrosshairDirection(float missileX, float missileY, float missileZ, float* outDirX, float* outDirY, float* outDirZ)
 {
     if (!gCameraActiveDataRef || !XPLMGetDatai(gCameraActiveDataRef)) {
         return false;
     }
     
-    // Use X-Plane's built-in screen center world coordinates
-    if (!gClick3DX || !gClick3DY || !gClick3DZ) {
+    if (!gCameraPanDataRef || !gCameraTiltDataRef) {
         return false;
     }
     
-    *outX = XPLMGetDataf(gClick3DX);
-    *outY = XPLMGetDataf(gClick3DY);
-    *outZ = XPLMGetDataf(gClick3DZ);
+    // Get FLIR angles
+    float pan = XPLMGetDataf(gCameraPanDataRef);
+    float tilt = XPLMGetDataf(gCameraTiltDataRef);
     
-    // Debug output - much more frequent for debugging
-    static float debugTimer = 0.0f;
-    debugTimer += 0.02f;
-    if (debugTimer >= 0.5f) { // Every 0.5 seconds instead of 3
-        char msg[256];
-        snprintf(msg, sizeof(msg), 
-            "HYBRID GUIDANCE: Screen center target -> (%.1f,%.1f,%.1f)\\n",
-            *outX, *outY, *outZ);
-        XPLMDebugString(msg);
-        debugTimer = 0.0f;
+    // Get aircraft position and orientation
+    float acX = XPLMGetDataf(gAircraftX);
+    float acY = XPLMGetDataf(gAircraftY);
+    float acZ = XPLMGetDataf(gAircraftZ);
+    float acHeading = XPLMGetDataf(gAircraftHeading);
+    float acPitch = XPLMGetDataf(gAircraftPitch);
+    float acRoll = XPLMGetDataf(gAircraftRoll);
+    
+    // Convert to radians
+    float headingRad = acHeading * M_PI / 180.0f;
+    float panRad = pan * M_PI / 180.0f;
+    float tiltRad = tilt * M_PI / 180.0f;
+    float pitchRad = acPitch * M_PI / 180.0f;
+    float rollRad = acRoll * M_PI / 180.0f;
+    
+    // Calculate FLIR direction in aircraft local coordinates
+    float localDirX = sin(panRad) * cos(tiltRad);
+    float localDirY = -sin(tiltRad);
+    float localDirZ = cos(panRad) * cos(tiltRad);
+    
+    // Transform by aircraft orientation (heading, pitch, roll)
+    float temp1X = localDirX * cos(headingRad) - localDirZ * sin(headingRad);
+    float temp1Y = localDirY;
+    float temp1Z = localDirX * sin(headingRad) + localDirZ * cos(headingRad);
+    
+    float temp2X = temp1X * cos(pitchRad) + temp1Y * sin(pitchRad);
+    float temp2Y = -temp1X * sin(pitchRad) + temp1Y * cos(pitchRad);
+    float temp2Z = temp1Z;
+    
+    *outDirX = temp2X;
+    *outDirY = temp2Y * cos(rollRad) - temp2Z * sin(rollRad);
+    *outDirZ = temp2Y * sin(rollRad) + temp2Z * cos(rollRad);
+    
+    // Normalize direction vector
+    float magnitude = sqrt((*outDirX)*(*outDirX) + (*outDirY)*(*outDirY) + (*outDirZ)*(*outDirZ));
+    if (magnitude > 0.001f) {
+        *outDirX /= magnitude;
+        *outDirY /= magnitude;
+        *outDirZ /= magnitude;
     }
     
     return true;
 }
 
-// Apply automatic guidance toward crosshair with proper missile physics
+// Apply automatic guidance toward crosshair direction with proper missile physics
 static void ApplyAutoCrosshairGuidance(float deltaTime)
 {
-    float newTargetX, newTargetY, newTargetZ;
-    if (!CalculateCrosshairTarget(&newTargetX, &newTargetY, &newTargetZ)) {
-        return;
-    }
-    
-    // Calculate target velocity for lead calculation
-    if (gTargetValid) {
-        gTargetVX = (newTargetX - gTargetX) / deltaTime;
-        gTargetVY = (newTargetY - gTargetY) / deltaTime;
-        gTargetVZ = (newTargetZ - gTargetZ) / deltaTime;
-    }
-    
-    gTargetX = newTargetX;
-    gTargetY = newTargetY;
-    gTargetZ = newTargetZ;
-    gTargetValid = true;
-    
     // Get weapon data
     float weaponX[10], weaponY[10], weaponZ[10];
     float weaponVX[10], weaponVY[10], weaponVZ[10];
@@ -362,67 +385,92 @@ static void ApplyAutoCrosshairGuidance(float deltaTime)
     
     bool foundWeapon = false;
     
-    // Guide weapons toward target with proportional navigation
+    // Guide weapons toward crosshair direction with proportional navigation
     for (int i = 0; i < numWeapons; i++) {
         if (weaponX[i] != 0.0f || weaponY[i] != 0.0f || weaponZ[i] != 0.0f) {
             foundWeapon = true;
             
-            // Calculate lead target position (where target will be)
-            float leadTargetX = gTargetX + gTargetVX * gTargetLeadTime;
-            float leadTargetY = gTargetY + gTargetVY * gTargetLeadTime;
-            float leadTargetZ = gTargetZ + gTargetVZ * gTargetLeadTime;
-            
-            // Vector from missile to lead target
-            float losX = leadTargetX - weaponX[i];
-            float losY = leadTargetY - weaponY[i];
-            float losZ = leadTargetZ - weaponZ[i];
-            float distance = sqrt(losX*losX + losY*losY + losZ*losZ);
-            
-            if (distance > 10.0f) {
-                // Normalize line-of-sight vector
-                losX /= distance;
-                losY /= distance;
-                losZ /= distance;
-                
-                // Current missile velocity
-                float currentSpeed = sqrt(weaponVX[i]*weaponVX[i] + weaponVY[i]*weaponVY[i] + weaponVZ[i]*weaponVZ[i]);
-                if (currentSpeed < 10.0f) currentSpeed = gWeaponSpeed; // Initial speed
-                
-                // Desired velocity direction (proportional navigation)
-                float desiredVX = losX * currentSpeed;
-                float desiredVY = losY * currentSpeed;
-                float desiredVZ = losZ * currentSpeed;
-                
-                // Calculate velocity change (limited by turn rate)
-                float deltaVX = desiredVX - weaponVX[i];
-                float deltaVY = desiredVY - weaponVY[i];
-                float deltaVZ = desiredVZ - weaponVZ[i];
-                
-                // Limit turn rate (realistic missile physics)
-                float maxDeltaV = gMaxTurnRate * M_PI / 180.0f * currentSpeed * deltaTime;
-                float deltaVMag = sqrt(deltaVX*deltaVX + deltaVY*deltaVY + deltaVZ*deltaVZ);
-                
-                if (deltaVMag > maxDeltaV) {
-                    float scale = maxDeltaV / deltaVMag;
-                    deltaVX *= scale;
-                    deltaVY *= scale;
-                    deltaVZ *= scale;
-                }
-                
-                // Apply steering
-                weaponVX[i] += deltaVX * gAutoGuidanceStrength;
-                weaponVY[i] += deltaVY * gAutoGuidanceStrength;
-                weaponVZ[i] += deltaVZ * gAutoGuidanceStrength;
-                
-                // Maintain approximately constant speed
-                float newSpeed = sqrt(weaponVX[i]*weaponVX[i] + weaponVY[i]*weaponVY[i] + weaponVZ[i]*weaponVZ[i]);
-                if (newSpeed > 1.0f) {
-                    float speedScale = gWeaponSpeed / newSpeed;
-                    weaponVX[i] *= speedScale;
-                    weaponVY[i] *= speedScale;
-                    weaponVZ[i] *= speedScale;
-                }
+            // Get crosshair direction from missile position
+            float crosshairDirX, crosshairDirY, crosshairDirZ;
+            if (!CalculateCrosshairDirection(weaponX[i], weaponY[i], weaponZ[i], &crosshairDirX, &crosshairDirY, &crosshairDirZ)) {
+                continue;
             }
+            
+            // PID error calculation (error = difference between desired and current velocity direction)
+            float currentVX = weaponVX[i];
+            float currentVY = weaponVY[i];
+            float currentVZ = weaponVZ[i];
+            
+            // Normalize current velocity to get direction
+            float currentSpeed = sqrt(currentVX*currentVX + currentVY*currentVY + currentVZ*currentVZ);
+            if (currentSpeed < 10.0f) currentSpeed = gWeaponSpeed; // Initial speed
+            
+            float currentDirX = currentSpeed > 1.0f ? currentVX / currentSpeed : 0.0f;
+            float currentDirY = currentSpeed > 1.0f ? currentVY / currentSpeed : 0.0f;
+            float currentDirZ = currentSpeed > 1.0f ? currentVZ / currentSpeed : 0.0f;
+            
+            // Error is difference between desired and current direction
+            float errorX = crosshairDirX - currentDirX;
+            float errorY = crosshairDirY - currentDirY;
+            float errorZ = crosshairDirZ - currentDirZ;
+            
+            // Integral term (accumulate error over time)
+            gErrorIntegralX += errorX * deltaTime;
+            gErrorIntegralY += errorY * deltaTime;
+            gErrorIntegralZ += errorZ * deltaTime;
+            
+            // Derivative term (rate of error change)
+            float errorDX = (errorX - gPrevErrorX) / deltaTime;
+            float errorDY = (errorY - gPrevErrorY) / deltaTime;
+            float errorDZ = (errorZ - gPrevErrorZ) / deltaTime;
+            
+            // PID control output
+            float pidOutputX = gProportionalGain * errorX + gIntegralGain * gErrorIntegralX + gDerivativeGain * errorDX;
+            float pidOutputY = gProportionalGain * errorY + gIntegralGain * gErrorIntegralY + gDerivativeGain * errorDY;
+            float pidOutputZ = gProportionalGain * errorZ + gIntegralGain * gErrorIntegralZ + gDerivativeGain * errorDZ;
+            
+            // Add gravity compensation to Y component
+            pidOutputY += gGravityCompensation / gWeaponSpeed; // Normalize by speed
+            
+            // Calculate new desired velocity
+            float newDesiredVX = currentVX + pidOutputX * currentSpeed;
+            float newDesiredVY = currentVY + pidOutputY * currentSpeed;
+            float newDesiredVZ = currentVZ + pidOutputZ * currentSpeed;
+            
+            // Calculate velocity change (limited by turn rate)
+            float deltaVX = newDesiredVX - weaponVX[i];
+            float deltaVY = newDesiredVY - weaponVY[i];
+            float deltaVZ = newDesiredVZ - weaponVZ[i];
+            
+            // Limit turn rate (realistic missile physics)
+            float maxDeltaV = gMaxTurnRate * M_PI / 180.0f * currentSpeed * deltaTime;
+            float deltaVMag = sqrt(deltaVX*deltaVX + deltaVY*deltaVY + deltaVZ*deltaVZ);
+            
+            if (deltaVMag > maxDeltaV) {
+                float scale = maxDeltaV / deltaVMag;
+                deltaVX *= scale;
+                deltaVY *= scale;
+                deltaVZ *= scale;
+            }
+            
+            // Apply steering
+            weaponVX[i] += deltaVX;
+            weaponVY[i] += deltaVY;
+            weaponVZ[i] += deltaVZ;
+            
+            // Maintain approximately constant speed
+            float newSpeed = sqrt(weaponVX[i]*weaponVX[i] + weaponVY[i]*weaponVY[i] + weaponVZ[i]*weaponVZ[i]);
+            if (newSpeed > 1.0f) {
+                float speedScale = gWeaponSpeed / newSpeed;
+                weaponVX[i] *= speedScale;
+                weaponVY[i] *= speedScale;
+                weaponVZ[i] *= speedScale;
+            }
+            
+            // Store previous error for next derivative calculation
+            gPrevErrorX = errorX;
+            gPrevErrorY = errorY;
+            gPrevErrorZ = errorZ;
         }
     }
     
@@ -435,11 +483,14 @@ static void ApplyAutoCrosshairGuidance(float deltaTime)
         static float weaponDebugTimer = 0.0f;
         weaponDebugTimer += deltaTime;
         if (weaponDebugTimer >= 1.0f) {
-            char msg[256];
-            snprintf(msg, sizeof(msg), 
-                "MISSILE: Pos(%.0f,%.0f,%.0f) -> Target(%.0f,%.0f,%.0f) TargetVel(%.1f,%.1f,%.1f)\\n",
-                weaponX[0], weaponY[0], weaponZ[0], gTargetX, gTargetY, gTargetZ, gTargetVX, gTargetVY, gTargetVZ);
-            XPLMDebugString(msg);
+            float crosshairDirX, crosshairDirY, crosshairDirZ;
+            if (CalculateCrosshairDirection(weaponX[0], weaponY[0], weaponZ[0], &crosshairDirX, &crosshairDirY, &crosshairDirZ)) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), 
+                    "MISSILE: Pos(%.0f,%.0f,%.0f) -> CrosshairDir(%.2f,%.2f,%.2f) Vel(%.1f,%.1f,%.1f)\\n",
+                    weaponX[0], weaponY[0], weaponZ[0], crosshairDirX, crosshairDirY, crosshairDirZ, weaponVX[0], weaponVY[0], weaponVZ[0]);
+                XPLMDebugString(msg);
+            }
             weaponDebugTimer = 0.0f;
         }
     } else {
