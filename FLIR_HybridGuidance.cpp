@@ -20,6 +20,7 @@
 #include "XPLMUtilities.h"
 #include "XPLMDataAccess.h"
 #include "XPLMProcessing.h"
+#include "XPLMScenery.h"
 
 // Flight loop
 static XPLMFlightLoopID gFlightLoopID = NULL;
@@ -48,6 +49,9 @@ static XPLMDataRef gCameraActiveDataRef = NULL;
 static XPLMDataRef gClick3DX = NULL;
 static XPLMDataRef gClick3DY = NULL;
 static XPLMDataRef gClick3DZ = NULL;
+
+// Terrain probing for ray casting
+static XPLMProbeRef gTerrainProbe = NULL;
 
 // Weapon arrays
 static XPLMDataRef gWeaponX = NULL;
@@ -135,6 +139,14 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gClick3DX = XPLMFindDataRef("sim/graphics/view/click_3d_x");
     gClick3DY = XPLMFindDataRef("sim/graphics/view/click_3d_y"); 
     gClick3DZ = XPLMFindDataRef("sim/graphics/view/click_3d_z");
+    
+    // Create terrain probe for ray casting
+    gTerrainProbe = XPLMCreateProbe(xplm_ProbeY);
+    if (gTerrainProbe) {
+        XPLMDebugString("HYBRID GUIDANCE: Terrain probe created successfully\\n");
+    } else {
+        XPLMDebugString("HYBRID GUIDANCE: ERROR - Failed to create terrain probe!\\n");
+    }
 
     // Find weapon system datarefs
     gWeaponX = XPLMFindDataRef("sim/weapons/x");
@@ -203,6 +215,11 @@ PLUGIN_API void XPluginStop(void)
     if (gFlightLoopID) {
         XPLMDestroyFlightLoop(gFlightLoopID);
         gFlightLoopID = NULL;
+    }
+    
+    if (gTerrainProbe) {
+        XPLMDestroyProbe(gTerrainProbe);
+        gTerrainProbe = NULL;
     }
 }
 
@@ -386,6 +403,93 @@ static bool CalculateCrosshairDirection(float missileX, float missileY, float mi
     return true;
 }
 
+// Ray casting with binary search to find terrain intersection (proven method from forum)
+static bool RaycastToTerrain(float startX, float startY, float startZ, float dirX, float dirY, float dirZ, float* outX, float* outY, float* outZ)
+{
+    if (!gTerrainProbe) {
+        XPLMDebugString("RAYCAST: ERROR - No terrain probe available\\n");
+        return false;
+    }
+    
+    // Binary search parameters (from forum post)
+    float minRange = 100.0f;      // Start at 100m
+    float maxRange = 30000.0f;    // Max 30km (maritime patrol range)
+    float precision = 1.0f;       // 1 meter precision
+    int maxIterations = 50;       // Safety limit
+    
+    XPLMProbeInfo_t probeInfo;
+    probeInfo.structSize = sizeof(XPLMProbeInfo_t);
+    
+    char debugMsg[256];
+    snprintf(debugMsg, sizeof(debugMsg), 
+        "RAYCAST: Start(%.1f,%.1f,%.1f) Dir(%.3f,%.3f,%.3f) Range(%.0f-%.0f)\\n",
+        startX, startY, startZ, dirX, dirY, dirZ, minRange, maxRange);
+    XPLMDebugString(debugMsg);
+    
+    int iteration = 0;
+    float currentRange = maxRange;
+    bool foundTerrain = false;
+    
+    // Binary search for terrain intersection
+    while ((maxRange - minRange) > precision && iteration < maxIterations) {
+        currentRange = (minRange + maxRange) / 2.0f;
+        
+        // Calculate test point along ray
+        float testX = startX + dirX * currentRange;
+        float testY = startY + dirY * currentRange;
+        float testZ = startZ + dirZ * currentRange;
+        
+        // Probe terrain at this point
+        XPLMProbeResult result = XPLMProbeTerrainXYZ(gTerrainProbe, testX, testY, testZ, &probeInfo);
+        
+        bool isUnderTerrain = (testY < probeInfo.locationY);
+        
+        if (iteration < 5 || iteration % 10 == 0) { // Log first few and every 10th iteration
+            snprintf(debugMsg, sizeof(debugMsg), 
+                "RAYCAST: Iter=%d Range=%.1f Test(%.1f,%.1f,%.1f) Terrain=%.1f Under=%s\\n",
+                iteration, currentRange, testX, testY, testZ, probeInfo.locationY, isUnderTerrain ? "YES" : "NO");
+            XPLMDebugString(debugMsg);
+        }
+        
+        if (result == xplm_ProbeHitTerrain) {
+            foundTerrain = true;
+            
+            if (isUnderTerrain) {
+                // We're under terrain, back up
+                maxRange = currentRange;
+            } else {
+                // We're above terrain, go further
+                minRange = currentRange;
+            }
+        } else {
+            // No terrain hit, go further
+            minRange = currentRange;
+        }
+        
+        iteration++;
+    }
+    
+    if (foundTerrain) {
+        // Final intersection point
+        *outX = startX + dirX * currentRange;
+        *outY = startY + dirY * currentRange;
+        *outZ = startZ + dirZ * currentRange;
+        
+        snprintf(debugMsg, sizeof(debugMsg), 
+            "RAYCAST: SUCCESS after %d iterations - Target(%.1f,%.1f,%.1f) Range=%.1fm\\n",
+            iteration, *outX, *outY, *outZ, currentRange);
+        XPLMDebugString(debugMsg);
+        
+        return true;
+    } else {
+        snprintf(debugMsg, sizeof(debugMsg), 
+            "RAYCAST: FAILED after %d iterations - No terrain intersection found\\n", iteration);
+        XPLMDebugString(debugMsg);
+        
+        return false;
+    }
+}
+
 // Apply automatic guidance toward crosshair direction with proper missile physics
 static void ApplyAutoCrosshairGuidance(float deltaTime)
 {
@@ -402,23 +506,47 @@ static void ApplyAutoCrosshairGuidance(float deltaTime)
     
     bool foundWeapon = false;
     
-    // Guide weapons toward crosshair direction with proportional navigation
+    // Guide weapons toward raycast target with proportional navigation
     for (int i = 0; i < numWeapons; i++) {
         if (weaponX[i] != 0.0f || weaponY[i] != 0.0f || weaponZ[i] != 0.0f) {
             foundWeapon = true;
             
-            // Get crosshair direction from missile position
+            // Get aircraft position for ray start
+            float acX = XPLMGetDataf(gAircraftX);
+            float acY = XPLMGetDataf(gAircraftY);
+            float acZ = XPLMGetDataf(gAircraftZ);
+            
+            // Get FLIR direction
             float crosshairDirX, crosshairDirY, crosshairDirZ;
-            if (!CalculateCrosshairDirection(weaponX[i], weaponY[i], weaponZ[i], &crosshairDirX, &crosshairDirY, &crosshairDirZ)) {
+            if (!CalculateCrosshairDirection(acX, acY, acZ, &crosshairDirX, &crosshairDirY, &crosshairDirZ)) {
                 continue;
             }
             
-            // PID error calculation (error = difference between desired and current velocity direction)
+            // Ray cast to find target on terrain/water
+            float targetX, targetY, targetZ;
+            if (!RaycastToTerrain(acX, acY, acZ, crosshairDirX, crosshairDirY, crosshairDirZ, &targetX, &targetY, &targetZ)) {
+                continue; // No target found, skip this missile
+            }
+            
+            // Calculate direction from missile to target
+            float deltaX = targetX - weaponX[i];
+            float deltaY = targetY - weaponY[i];
+            float deltaZ = targetZ - weaponZ[i];
+            float distance = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
+            
+            if (distance < 50.0f) {
+                continue; // Too close, skip
+            }
+            
+            // Desired direction (normalized)
+            float desiredDirX = deltaX / distance;
+            float desiredDirY = deltaY / distance;
+            float desiredDirZ = deltaZ / distance;
+            
+            // Current missile velocity and direction
             float currentVX = weaponVX[i];
             float currentVY = weaponVY[i];
             float currentVZ = weaponVZ[i];
-            
-            // Normalize current velocity to get direction
             float currentSpeed = sqrt(currentVX*currentVX + currentVY*currentVY + currentVZ*currentVZ);
             if (currentSpeed < 10.0f) currentSpeed = gWeaponSpeed; // Initial speed
             
@@ -427,9 +555,9 @@ static void ApplyAutoCrosshairGuidance(float deltaTime)
             float currentDirZ = currentSpeed > 1.0f ? currentVZ / currentSpeed : 0.0f;
             
             // Error is difference between desired and current direction
-            float errorX = crosshairDirX - currentDirX;
-            float errorY = crosshairDirY - currentDirY;
-            float errorZ = crosshairDirZ - currentDirZ;
+            float errorX = desiredDirX - currentDirX;
+            float errorY = desiredDirY - currentDirY;
+            float errorZ = desiredDirZ - currentDirZ;
             
             // Integral term (accumulate error over time)
             gErrorIntegralX += errorX * deltaTime;
@@ -499,14 +627,23 @@ static void ApplyAutoCrosshairGuidance(float deltaTime)
         // Debug weapon guidance
         static float weaponDebugTimer = 0.0f;
         weaponDebugTimer += deltaTime;
-        if (weaponDebugTimer >= 1.0f) {
+        if (weaponDebugTimer >= 2.0f) {
+            // Test raycast from aircraft position
+            float acX = XPLMGetDataf(gAircraftX);
+            float acY = XPLMGetDataf(gAircraftY);
+            float acZ = XPLMGetDataf(gAircraftZ);
+            
             float crosshairDirX, crosshairDirY, crosshairDirZ;
-            if (CalculateCrosshairDirection(weaponX[0], weaponY[0], weaponZ[0], &crosshairDirX, &crosshairDirY, &crosshairDirZ)) {
-                char msg[256];
-                snprintf(msg, sizeof(msg), 
-                    "MISSILE: Pos(%.0f,%.0f,%.0f) -> CrosshairDir(%.2f,%.2f,%.2f) Vel(%.1f,%.1f,%.1f)\\n",
-                    weaponX[0], weaponY[0], weaponZ[0], crosshairDirX, crosshairDirY, crosshairDirZ, weaponVX[0], weaponVY[0], weaponVZ[0]);
-                XPLMDebugString(msg);
+            if (CalculateCrosshairDirection(acX, acY, acZ, &crosshairDirX, &crosshairDirY, &crosshairDirZ)) {
+                float targetX, targetY, targetZ;
+                if (RaycastToTerrain(acX, acY, acZ, crosshairDirX, crosshairDirY, crosshairDirZ, &targetX, &targetY, &targetZ)) {
+                    float range = sqrt((targetX-acX)*(targetX-acX) + (targetY-acY)*(targetY-acY) + (targetZ-acZ)*(targetZ-acZ));
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), 
+                        "GUIDANCE: Aircraft(%.0f,%.0f,%.0f) -> Target(%.0f,%.0f,%.0f) Range=%.0fm\\n",
+                        acX, acY, acZ, targetX, targetY, targetZ, range);
+                    XPLMDebugString(msg);
+                }
             }
             weaponDebugTimer = 0.0f;
         }
