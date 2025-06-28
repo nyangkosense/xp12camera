@@ -44,6 +44,11 @@ static XPLMDataRef gCameraPanDataRef = NULL;
 static XPLMDataRef gCameraTiltDataRef = NULL;
 static XPLMDataRef gCameraActiveDataRef = NULL;
 
+// X-Plane screen center world coordinates
+static XPLMDataRef gClick3DX = NULL;
+static XPLMDataRef gClick3DY = NULL;
+static XPLMDataRef gClick3DZ = NULL;
+
 // Weapon arrays
 static XPLMDataRef gWeaponX = NULL;
 static XPLMDataRef gWeaponY = NULL;
@@ -104,6 +109,11 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gCameraPanDataRef = XPLMFindDataRef("flir/camera/pan");
     gCameraTiltDataRef = XPLMFindDataRef("flir/camera/tilt");
     gCameraActiveDataRef = XPLMFindDataRef("flir/camera/active");
+    
+    // Find X-Plane screen center world coordinate datarefs
+    gClick3DX = XPLMFindDataRef("sim/graphics/view/click_3d_x");
+    gClick3DY = XPLMFindDataRef("sim/graphics/view/click_3d_y"); 
+    gClick3DZ = XPLMFindDataRef("sim/graphics/view/click_3d_z");
 
     // Find weapon system datarefs
     gWeaponX = XPLMFindDataRef("sim/weapons/x");
@@ -279,84 +289,21 @@ static void DecreaseAutoGuidance(void* inRefcon)
     XPLMDebugString(msg);
 }
 
-// Calculate where FLIR crosshair is pointing (simplified)
+// Calculate where center screen is pointing using X-Plane's built-in coordinates
 static bool CalculateCrosshairTarget(float* outX, float* outY, float* outZ)
 {
     if (!gCameraActiveDataRef || !XPLMGetDatai(gCameraActiveDataRef)) {
         return false;
     }
     
-    if (!gCameraPanDataRef || !gCameraTiltDataRef) {
+    // Use X-Plane's built-in screen center world coordinates
+    if (!gClick3DX || !gClick3DY || !gClick3DZ) {
         return false;
     }
     
-    // Get FLIR angles
-    float pan = XPLMGetDataf(gCameraPanDataRef);
-    float tilt = XPLMGetDataf(gCameraTiltDataRef);
-    
-    // Get aircraft position and orientation
-    float acX = XPLMGetDataf(gAircraftX);
-    float acY = XPLMGetDataf(gAircraftY);
-    float acZ = XPLMGetDataf(gAircraftZ);
-    float acHeading = XPLMGetDataf(gAircraftHeading);
-    
-    // Convert to radians
-    float headingRad = acHeading * M_PI / 180.0f;
-    float panRad = pan * M_PI / 180.0f;
-    float tiltRad = tilt * M_PI / 180.0f;
-    
-    // Get aircraft orientation
-    float acPitch = XPLMGetDataf(gAircraftPitch);
-    float acRoll = XPLMGetDataf(gAircraftRoll);
-    
-    // Convert all angles to radians
-    float pitchRad = acPitch * M_PI / 180.0f;
-    float rollRad = acRoll * M_PI / 180.0f;
-    
-    // Calculate turret direction in aircraft local coordinates
-    // Pan = rotation around vertical axis, Tilt = rotation around horizontal axis
-    float localDirX = sin(panRad) * cos(tiltRad);
-    float localDirY = -sin(tiltRad); // Negative because positive tilt points down
-    float localDirZ = cos(panRad) * cos(tiltRad);
-    
-    // Transform turret direction by aircraft orientation (heading, pitch, roll)
-    // Apply heading rotation (yaw)
-    float temp1X = localDirX * cos(headingRad) - localDirZ * sin(headingRad);
-    float temp1Y = localDirY;
-    float temp1Z = localDirX * sin(headingRad) + localDirZ * cos(headingRad);
-    
-    // Apply pitch rotation
-    float temp2X = temp1X * cos(pitchRad) + temp1Y * sin(pitchRad);
-    float temp2Y = -temp1X * sin(pitchRad) + temp1Y * cos(pitchRad);
-    float temp2Z = temp1Z;
-    
-    // Apply roll rotation
-    float dirX = temp2X;
-    float dirY = temp2Y * cos(rollRad) - temp2Z * sin(rollRad);
-    float dirZ = temp2Y * sin(rollRad) + temp2Z * cos(rollRad);
-    
-    // Calculate target position from turret location (underneath aircraft)
-    float turretX = acX;
-    float turretY = acY - 3.0f; // Turret is 3m below aircraft center
-    float turretZ = acZ;
-    
-    // Determine range based on turret aim direction
-    float range = 5000.0f; // Default 5km range
-    
-    if (dirY < -0.05f) {
-        // Pointing downward - intersect with ground (Y=0)
-        range = -turretY / dirY;
-        range = fminf(range, 15000.0f); // Max 15km range
-        range = fmaxf(range, 100.0f);   // Min 100m range
-    } else if (dirY > 0.05f) {
-        // Pointing upward - use shorter range for air targets
-        range = 3000.0f; // 3km for air targets
-    }
-    // If nearly horizontal (dirY near 0), use default 5km
-    
-    *outX = turretX + dirX * range;
-    *outY = turretY + dirY * range;
-    *outZ = turretZ + dirZ * range;
+    *outX = XPLMGetDataf(gClick3DX);
+    *outY = XPLMGetDataf(gClick3DY);
+    *outZ = XPLMGetDataf(gClick3DZ);
     
     // Debug output
     static float debugTimer = 0.0f;
@@ -364,8 +311,8 @@ static bool CalculateCrosshairTarget(float* outX, float* outY, float* outZ)
     if (debugTimer >= 3.0f) {
         char msg[256];
         snprintf(msg, sizeof(msg), 
-            "HYBRID GUIDANCE: Crosshair target pan=%.1f° tilt=%.1f° -> (%.0f,%.0f,%.0f) range=%.0fm\\n",
-            pan, tilt, *outX, *outY, *outZ, range);
+            "HYBRID GUIDANCE: Screen center target -> (%.0f,%.0f,%.0f)\\n",
+            *outX, *outY, *outZ);
         XPLMDebugString(msg);
         debugTimer = 0.0f;
     }
