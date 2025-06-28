@@ -45,11 +45,14 @@ static XPLMDataRef gFLIRTilt = NULL;
 // Terrain probe
 static XPLMProbeRef gTerrainProbe = NULL;
 
-// Hybrid X-Plane weapon system + missile tracking
+// Real X-Plane weapon system integration
 static XPLMDataRef gMissilesArmed = NULL;
-static XPLMDataRef gGPSLockHere = NULL;
-static XPLMDataRef gWeaponCount = NULL;
-static XPLMDataRef gFiringRate = NULL;
+static XPLMDataRef gWeaponX = NULL;
+static XPLMDataRef gWeaponY = NULL; 
+static XPLMDataRef gWeaponZ = NULL;
+static XPLMDataRef gWeaponVX = NULL;
+static XPLMDataRef gWeaponVY = NULL;
+static XPLMDataRef gWeaponVZ = NULL;
 
 // Our missile tracking system
 static bool gMissileActive = false;
@@ -86,6 +89,9 @@ bool RaycastToTerrain(Vector3 start, Vector3 direction, Vector3* hitPoint);
 static void FireWeapon(void);
 static void InitializeWeaponSystem(void);
 static void ArmWeaponSystem(void);
+static void FireRealMissile(void);
+static int FindActiveMissile(void);
+static void SteerRealMissile(int missileIndex);
 static float MissileTrackingLoop(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
 static void UpdateMissileGuidance(float deltaTime);
 static void LaunchMissile(void);
@@ -454,25 +460,28 @@ static void RunMatrixTest(void)
 // Hybrid X-Plane Weapon System Implementation
 static void InitializeWeaponSystem(void)
 {
-    XPLMDebugString("WEAPON_SYS: Initializing hybrid weapon system...\n");
+    XPLMDebugString("WEAPON_SYS: Initializing real X-Plane weapon arrays...\n");
     
-    // Find X-Plane weapon system datarefs that actually exist
+    // Find real weapon array datarefs (from hybrid guidance system)
+    gWeaponX = XPLMFindDataRef("sim/weapons/warhead_x");
+    gWeaponY = XPLMFindDataRef("sim/weapons/warhead_y"); 
+    gWeaponZ = XPLMFindDataRef("sim/weapons/warhead_z");
+    gWeaponVX = XPLMFindDataRef("sim/weapons/warhead_vx");
+    gWeaponVY = XPLMFindDataRef("sim/weapons/warhead_vy");
+    gWeaponVZ = XPLMFindDataRef("sim/weapons/warhead_vz");
     gMissilesArmed = XPLMFindDataRef("sim/cockpit/weapons/missiles_armed");
-    gGPSLockHere = XPLMFindDataRef("sim/weapons/GPS_lock_here");
-    gWeaponCount = XPLMFindDataRef("sim/cockpit/weapons/chaff_now");
-    gFiringRate = XPLMFindDataRef("sim/cockpit/weapons/firing_rate");
     
-    // Check if basic weapon system is available
-    if (gMissilesArmed) {
+    // Check if weapon arrays are available
+    if (gWeaponX && gWeaponY && gWeaponZ && gWeaponVX && gWeaponVY && gWeaponVZ) {
         gWeaponSystemReady = true;
-        XPLMDebugString("WEAPON_SYS: X-Plane missile system found!\n");
-        ArmWeaponSystem();
+        XPLMDebugString("WEAPON_SYS: Real weapon arrays found - can control missiles!\n");
+        if (gMissilesArmed) {
+            XPLMDebugString("WEAPON_SYS: Missile arming system available\n");
+        }
     } else {
         gWeaponSystemReady = false;
-        XPLMDebugString("WEAPON_SYS: No X-Plane weapons - using pure simulation mode\n");
+        XPLMDebugString("WEAPON_SYS: No weapon arrays - using simulation mode\n");
     }
-    
-    XPLMDebugString("WEAPON_SYS: Missile tracking system ready\n");
 }
 
 static void ArmWeaponSystem(void)
@@ -483,11 +492,8 @@ static void ArmWeaponSystem(void)
     XPLMSetDatai(gMissilesArmed, 1);
     XPLMDebugString("WEAPON_SYS: MISSILES ARMED\n");
     
-    // Set GPS lock to our target coordinates if available
-    if (gGPSLockHere && gTargetValid) {
-        XPLMSetDatai(gGPSLockHere, 1);
-        XPLMDebugString("WEAPON_SYS: GPS lock enabled\n");
-    }
+    // Weapon system is ready for missile control
+    XPLMDebugString("WEAPON_SYS: Ready to control real missiles\n");
 }
 
 static void FireWeapon(void)
@@ -532,8 +538,12 @@ static void FireWeapon(void)
         XPLMDebugString("WEAPON_SYS: X-Plane weapon system triggered\n");
     }
     
-    // Launch our tracked missile
-    LaunchMissile();
+    // Fire real X-Plane missile and control it
+    if (gWeaponSystemReady) {
+        FireRealMissile();
+    } else {
+        LaunchMissile(); // Fallback simulation
+    }
     
     XPLMDebugString("WEAPON_SYS: ==========================================\n");
 }
@@ -602,10 +612,25 @@ static float MissileTrackingLoop(float inElapsedSinceLastCall, float inElapsedTi
         return 0; // Stop if no missile
     }
     
-    float deltaTime = inElapsedSinceLastCall;
-    if (deltaTime > 0.1f) deltaTime = 0.1f; // Cap delta time
-    
-    UpdateMissileGuidance(deltaTime);
+    if (gWeaponSystemReady) {
+        // Track and steer real X-Plane missile
+        int missileIndex = FindActiveMissile();
+        if (missileIndex >= 0) {
+            SteerRealMissile(missileIndex);
+        } else {
+            static int noMissileCounter = 0;
+            if (++noMissileCounter >= 50) { // After 5 seconds
+                XPLMDebugString("REAL_MISSILE: No active missile found - stopping tracking\n");
+                gMissileActive = false;
+                return 0;
+            }
+        }
+    } else {
+        // Fallback to simulation
+        float deltaTime = inElapsedSinceLastCall;
+        if (deltaTime > 0.1f) deltaTime = 0.1f;
+        UpdateMissileGuidance(deltaTime);
+    }
     
     // Continue tracking every 0.1 seconds
     return 0.1f;
@@ -697,5 +722,138 @@ static void UpdateMissileGuidance(float deltaTime)
         gMissileActive = false;
         totalFlightTime = 0.0f;
         return;
+    }
+}
+
+// Real X-Plane Missile Control Implementation
+static void FireRealMissile(void)
+{
+    XPLMDebugString("REAL_MISSILE: Triggering X-Plane missile launch...\n");
+    
+    // Arm missiles if available
+    if (gMissilesArmed) {
+        XPLMSetDatai(gMissilesArmed, 1);
+        XPLMDebugString("REAL_MISSILE: Missiles armed\n");
+    }
+    
+    // Note: Actual missile firing depends on aircraft weapon systems
+    // The missile should appear in weapon arrays after firing
+    
+    // Start tracking loop to find and control the missile
+    if (!gMissileTrackingLoop) {
+        XPLMCreateFlightLoop_t flightLoopParams;
+        flightLoopParams.structSize = sizeof(XPLMCreateFlightLoop_t);
+        flightLoopParams.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
+        flightLoopParams.callbackFunc = MissileTrackingLoop;
+        flightLoopParams.refcon = NULL;
+        
+        gMissileTrackingLoop = XPLMCreateFlightLoop(&flightLoopParams);
+        if (gMissileTrackingLoop) {
+            XPLMScheduleFlightLoop(gMissileTrackingLoop, 0.1f, 1);
+            XPLMDebugString("REAL_MISSILE: Real missile tracking started\n");
+        }
+    }
+    
+    gMissileActive = true; // Enable tracking
+}
+
+static int FindActiveMissile(void)
+{
+    if (!gWeaponSystemReady) return -1;
+    
+    // Check weapon arrays for active missiles
+    float weaponX[40], weaponY[40], weaponZ[40];
+    float weaponVX[40], weaponVY[40], weaponVZ[40];
+    
+    int numFound = XPLMGetDatavf(gWeaponX, weaponX, 0, 40);
+    if (numFound <= 0) return -1;
+    
+    XPLMGetDatavf(gWeaponY, weaponY, 0, numFound);
+    XPLMGetDatavf(gWeaponZ, weaponZ, 0, numFound);
+    XPLMGetDatavf(gWeaponVX, weaponVX, 0, numFound);
+    XPLMGetDatavf(gWeaponVY, weaponVY, 0, numFound);
+    XPLMGetDatavf(gWeaponVZ, weaponVZ, 0, numFound);
+    
+    // Find missile with non-zero velocity (active)
+    for (int i = 0; i < numFound; i++) {
+        float speed = sqrt(weaponVX[i]*weaponVX[i] + weaponVY[i]*weaponVY[i] + weaponVZ[i]*weaponVZ[i]);
+        if (speed > 10.0f) { // Active missile
+            
+            // Update our tracking variables
+            gMissileX = weaponX[i];
+            gMissileY = weaponY[i];
+            gMissileZ = weaponZ[i];
+            gMissileVX = weaponVX[i];
+            gMissileVY = weaponVY[i];
+            gMissileVZ = weaponVZ[i];
+            
+            static int lastLogTime = 0;
+            if (++lastLogTime >= 10) {
+                lastLogTime = 0;
+                char msg[256];
+                snprintf(msg, sizeof(msg), 
+                    "REAL_MISSILE: Found active missile [%d] at (%.1f,%.1f,%.1f) speed=%.1fm/s\n",
+                    i, weaponX[i], weaponY[i], weaponZ[i], speed);
+                XPLMDebugString(msg);
+            }
+            
+            return i;
+        }
+    }
+    
+    return -1; // No active missile found
+}
+
+static void SteerRealMissile(int missileIndex)
+{
+    if (!gWeaponSystemReady || !gTargetValid || missileIndex < 0) return;
+    
+    // Calculate desired velocity toward target
+    float deltaX = gTargetX - gMissileX;
+    float deltaY = gTargetY - gMissileY;
+    float deltaZ = gTargetZ - gMissileZ;
+    float distance = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
+    
+    if (distance < 10.0f) {
+        XPLMDebugString("REAL_MISSILE: *** TARGET HIT! ***\n");
+        gMissileActive = false;
+        return;
+    }
+    
+    if (distance > 0) {
+        // Calculate current speed to maintain
+        float currentSpeed = sqrt(gMissileVX*gMissileVX + gMissileVY*gMissileVY + gMissileVZ*gMissileVZ);
+        if (currentSpeed < 50.0f) currentSpeed = 250.0f; // Default speed
+        
+        // Calculate new velocity toward target
+        float newVX = (deltaX / distance) * currentSpeed;
+        float newVY = (deltaY / distance) * currentSpeed;
+        float newVZ = (deltaZ / distance) * currentSpeed;
+        
+        // Apply gradual steering (don't turn too quickly)
+        float steerRate = 0.1f;
+        float steerVX = gMissileVX * (1.0f - steerRate) + newVX * steerRate;
+        float steerVY = gMissileVY * (1.0f - steerRate) + newVY * steerRate;
+        float steerVZ = gMissileVZ * (1.0f - steerRate) + newVZ * steerRate;
+        
+        // Update missile velocity in X-Plane
+        XPLMSetDatavf(gWeaponVX, &steerVX, missileIndex, 1);
+        XPLMSetDatavf(gWeaponVY, &steerVY, missileIndex, 1);
+        XPLMSetDatavf(gWeaponVZ, &steerVZ, missileIndex, 1);
+        
+        // Update our tracking
+        gMissileVX = steerVX;
+        gMissileVY = steerVY;
+        gMissileVZ = steerVZ;
+        
+        static int logCounter = 0;
+        if (++logCounter >= 10) {
+            logCounter = 0;
+            char msg[256];
+            snprintf(msg, sizeof(msg), 
+                "REAL_MISSILE: Steering missile [%d] toward target, distance=%.1fm\n",
+                missileIndex, distance);
+            XPLMDebugString(msg);
+        }
     }
 }
