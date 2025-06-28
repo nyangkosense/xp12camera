@@ -52,8 +52,18 @@ static float gTargetY = 0.0f;
 static float gTargetZ = 0.0f;
 static bool gTargetValid = false;
 
+// Custom missile system (our own implementation)
+static float gMissileX = 0.0f;
+static float gMissileY = 0.0f;
+static float gMissileZ = 0.0f;
+static float gMissileVX = 0.0f;
+static float gMissileVY = 0.0f;
+static float gMissileVZ = 0.0f;
+static bool gMissileActive = false;
+
 // Function prototypes
 static void ProbeTerrainTarget(void* inRefcon);
+static void LaunchMissile(void* inRefcon);
 static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon);
 static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ);
 
@@ -102,8 +112,9 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
         return 0;
     }
 
-    // Register hotkey for target designation - using TAB to avoid SPACEBAR conflict with FLIR
+    // Register hotkeys
     XPLMRegisterHotKey(XPLM_VK_TAB, xplm_DownFlag, "Terrain: Probe Target", ProbeTerrainTarget, NULL);
+    XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "Missile: Launch", LaunchMissile, NULL);
     
     // Register flight loop using modern API for better reliability
     XPLMCreateFlightLoop_t flightLoopParams;
@@ -124,7 +135,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 
     XPLMDebugString("TERRAIN PROBE: Plugin loaded successfully\n");
     XPLMDebugString("TERRAIN PROBE: Flight loop registered - should start running now\n");
-    XPLMDebugString("TERRAIN PROBE: TAB=Probe terrain target (changed from SPACEBAR to avoid conflicts)\n");
+    XPLMDebugString("TERRAIN PROBE: TAB=Probe terrain target, SPACEBAR=Launch missile\n");
 
     return 1;
 }
@@ -165,9 +176,9 @@ static bool FindPreciseTarget(float startX, float startY, float startZ, float di
 {
     if (!gTerrainProbe) return false;
     
-    float maxDist = 30000.0f;  // 30km maximum range
-    float minDist = 0.0f;
-    float tolerance = 1.0f;    // 1 meter precision
+    float maxDist = 30000.0f;  // 30km maximum range  
+    float minDist = 100.0f;    // Start at 100m minimum (avoid aircraft itself)
+    float tolerance = 10.0f;   // 10 meter precision for now (faster debugging)
     
     XPLMProbeInfo_t probeInfo;
     probeInfo.structSize = sizeof(XPLMProbeInfo_t);
@@ -185,15 +196,17 @@ static bool FindPreciseTarget(float startX, float startY, float startZ, float di
         XPLMProbeResult result = XPLMProbeTerrainXYZ(gTerrainProbe, testX, testY, testZ, &probeInfo);
         
         if (result == xplm_ProbeHitTerrain) {
-            if (testY < probeInfo.locationY) {
-                // Ray point is underground - back up
+            float terrainHeight = probeInfo.locationY;
+            if (testY <= terrainHeight + 5.0f) {
+                // Ray point hits terrain (within 5m tolerance) - we found intersection
                 maxDist = testDist;
+                break;
             } else {
-                // Ray point is above ground - go further  
+                // Ray point is above terrain - go further
                 minDist = testDist;
             }
         } else {
-            // No terrain hit - reduce range
+            // No terrain hit at this point - reduce search range
             maxDist = testDist;
         }
     }
@@ -260,11 +273,18 @@ static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ)
     float totalPitch = pitchRad + tiltRad;
     
     // Direction vector pointing down the gimbal boresight
-    // In aircraft coordinates, camera points down (negative Y)
-    // Transform to world coordinates
+    // FLIR camera should point downward in world coordinates
+    // X-Plane coordinate system: +Y is up, so camera direction should have -Y for downward
     float dirX = sin(totalHeading) * cos(totalPitch);
-    float dirY = -sin(totalPitch);  // Negative for downward looking
+    float dirY = -sin(totalPitch);  // Should be negative for downward
     float dirZ = cos(totalHeading) * cos(totalPitch);
+    
+    // Debug: Check if direction makes sense
+    if (dirY > 0) {
+        XPLMDebugString("TERRAIN PROBE: WARNING - Direction vector pointing UP instead of DOWN!\n");
+        // Force downward direction for testing
+        dirY = -fabs(dirY);
+    }
     
     char dirMsg[256];
     snprintf(dirMsg, sizeof(dirMsg), "TERRAIN PROBE: Direction vector=(%.3f,%.3f,%.3f) heading=%.1f° pitch=%.1f° pan=%.1f° tilt=%.1f°\n",
@@ -303,6 +323,50 @@ static void ProbeTerrainTarget(void* inRefcon)
     }
 }
 
+// Launch our custom missile
+static void LaunchMissile(void* inRefcon)
+{
+    if (!gTargetValid) {
+        XPLMDebugString("TERRAIN PROBE: Cannot launch - no target designated! Press TAB first.\n");
+        return;
+    }
+    
+    if (gMissileActive) {
+        XPLMDebugString("TERRAIN PROBE: Missile already in flight!\n");
+        return;
+    }
+    
+    // Get aircraft position as launch point
+    float acX = XPLMGetDataf(gAircraftX);
+    float acY = XPLMGetDataf(gAircraftY);
+    float acZ = XPLMGetDataf(gAircraftZ);
+    
+    // Launch missile from aircraft position
+    gMissileX = acX;
+    gMissileY = acY;
+    gMissileZ = acZ;
+    
+    // Initial velocity - point toward target
+    float deltaX = gTargetX - gMissileX;
+    float deltaY = gTargetY - gMissileY;
+    float deltaZ = gTargetZ - gMissileZ;
+    float distance = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
+    
+    if (distance > 0) {
+        float initialSpeed = 100.0f; // 100 m/s initial velocity
+        gMissileVX = (deltaX / distance) * initialSpeed;
+        gMissileVY = (deltaY / distance) * initialSpeed;
+        gMissileVZ = (deltaZ / distance) * initialSpeed;
+    }
+    
+    gMissileActive = true;
+    
+    char msg[256];
+    snprintf(msg, sizeof(msg), "TERRAIN PROBE: Missile launched! Target: (%.1f,%.1f,%.1f) Range: %.0fm\n",
+        gTargetX, gTargetY, gTargetZ, distance);
+    XPLMDebugString(msg);
+}
+
 // Enhanced missile guidance using precise terrain coordinates
 static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon)
 {
@@ -324,45 +388,36 @@ static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedT
         targetDebugTimer = 0.0f;
     }
     
-    if (!gTargetValid) {
-        // No target, but continue flight loop
-        return 0.02f; // Continue at 50Hz even without target
+    if (!gTargetValid || !gMissileActive) {
+        // No target or no missile, but continue flight loop
+        return 0.02f; // Continue at 50Hz
     }
     
-    // Get current weapon position
-    float weaponX = XPLMGetDataf(gWeaponX);
-    float weaponY = XPLMGetDataf(gWeaponY);
-    float weaponZ = XPLMGetDataf(gWeaponZ);
-    
-    // Debug: Check weapon status
-    static float weaponDebugTimer = 0.0f;
-    weaponDebugTimer += inElapsedSinceLastCall;
-    if (weaponDebugTimer >= 3.0f) {
+    // Debug: Check missile status
+    static float missileDebugTimer = 0.0f;
+    missileDebugTimer += inElapsedSinceLastCall;
+    if (missileDebugTimer >= 1.0f) {
         char msg[256];
-        snprintf(msg, sizeof(msg), "TERRAIN PROBE: Weapon pos=(%.2f,%.2f,%.2f)\n", 
-            weaponX, weaponY, weaponZ);
+        snprintf(msg, sizeof(msg), "TERRAIN PROBE: Missile pos=(%.1f,%.1f,%.1f) vel=(%.1f,%.1f,%.1f)\n", 
+            gMissileX, gMissileY, gMissileZ, gMissileVX, gMissileVY, gMissileVZ);
         XPLMDebugString(msg);
-        weaponDebugTimer = 0.0f;
+        missileDebugTimer = 0.0f;
     }
     
-    // Check if weapon exists and is in flight
-    if (weaponX == 0.0f && weaponY == 0.0f && weaponZ == 0.0f) {
-        return -1.0f; // No weapon in flight
-    }
-    
-    // Calculate vector to target
-    float deltaX = gTargetX - weaponX;
-    float deltaY = gTargetY - weaponY;
-    float deltaZ = gTargetZ - weaponZ;
+    // Calculate vector to target (using our custom missile position)
+    float deltaX = gTargetX - gMissileX;
+    float deltaY = gTargetY - gMissileY;
+    float deltaZ = gTargetZ - gMissileZ;
     
     // Calculate distance to target
     float distance = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
     
     if (distance < 50.0f) {
-        // Close to target - stop guidance
+        // Close to target - missile hit!
+        gMissileActive = false;
         gTargetValid = false;
-        XPLMDebugString("TERRAIN PROBE: Missile reached target!\n");
-        return -1.0f;
+        XPLMDebugString("TERRAIN PROBE: *** MISSILE HIT TARGET! ***\n");
+        return 0.02f;
     }
     
     // Proportional navigation guidance  
@@ -378,20 +433,16 @@ static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedT
     float desiredVY = dirY * maxVelocity;
     float desiredVZ = dirZ * maxVelocity;
     
-    // Apply smoothing for more realistic guidance
-    float currentVX = XPLMGetDataf(gWeaponVX);
-    float currentVY = XPLMGetDataf(gWeaponVY);
-    float currentVZ = XPLMGetDataf(gWeaponVZ);
+    // Apply guidance to our custom missile
+    float smoothFactor = 0.2f; // Guidance responsiveness
+    gMissileVX += (desiredVX - gMissileVX) * smoothFactor;
+    gMissileVY += (desiredVY - gMissileVY) * smoothFactor;
+    gMissileVZ += (desiredVZ - gMissileVZ) * smoothFactor;
     
-    float smoothFactor = 0.1f; // Lower value for 50Hz - more responsive guidance
-    float newVX = currentVX + (desiredVX - currentVX) * smoothFactor;
-    float newVY = currentVY + (desiredVY - currentVY) * smoothFactor;
-    float newVZ = currentVZ + (desiredVZ - currentVZ) * smoothFactor;
-    
-    // Set weapon velocity
-    XPLMSetDataf(gWeaponVX, newVX);
-    XPLMSetDataf(gWeaponVY, newVY);
-    XPLMSetDataf(gWeaponVZ, newVZ);
+    // Update missile position based on velocity
+    gMissileX += gMissileVX * inElapsedSinceLastCall;
+    gMissileY += gMissileVY * inElapsedSinceLastCall;
+    gMissileZ += gMissileVZ * inElapsedSinceLastCall;
     
     // Debug output every 2 seconds (less frequent due to 50Hz updates)
     static float debugTimer = 0.0f;
@@ -399,10 +450,10 @@ static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedT
     if (debugTimer >= 2.0f) {
         char msg[256];
         snprintf(msg, sizeof(msg), "TERRAIN PROBE: Guiding missile dist=%.0fm vel=(%.1f,%.1f,%.1f)\n",
-            distance, newVX, newVY, newVZ);
+            distance, gMissileVX, gMissileVY, gMissileVZ);
         XPLMDebugString(msg);
         debugTimer = 0.0f;
     }
     
-    return -1.0f; // Continue flight loop
+    return 0.02f; // Continue at 50Hz
 }
