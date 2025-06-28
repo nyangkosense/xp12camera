@@ -211,7 +211,58 @@ static void DebugGimbalPosition(void* inRefcon)
     XPLMDebugString("GPS TARGETING: === END GIMBAL DEBUG ===\\n");
 }
 
-// Use X-Plane's GPS lock system
+// Calculate target coordinates from FLIR gimbal
+static bool CalculateTargetFromGimbal(float* outX, float* outY, float* outZ)
+{
+    if (!gCameraActiveDataRef || !XPLMGetDatai(gCameraActiveDataRef)) {
+        XPLMDebugString("GPS TARGETING: FLIR camera not active\\n");
+        return false;
+    }
+    
+    if (!gCameraPanDataRef || !gCameraTiltDataRef) {
+        XPLMDebugString("GPS TARGETING: Gimbal angles not available\\n");
+        return false;
+    }
+    
+    // Get current gimbal position
+    float pan = XPLMGetDataf(gCameraPanDataRef);
+    float tilt = XPLMGetDataf(gCameraTiltDataRef);
+    
+    // Get aircraft position
+    float acX = XPLMGetDataf(gAircraftX);
+    float acY = XPLMGetDataf(gAircraftY);
+    float acZ = XPLMGetDataf(gAircraftZ);
+    
+    // Simple ray casting - assume target is on ground (Y=0)
+    float panRad = pan * M_PI / 180.0f;
+    float tiltRad = tilt * M_PI / 180.0f;
+    
+    // Direction vector (simplified)
+    float dirX = sin(panRad) * cos(tiltRad);
+    float dirY = sin(tiltRad);
+    float dirZ = cos(panRad) * cos(tiltRad);
+    
+    // Cast ray to ground (Y=0)
+    if (dirY >= 0) {
+        XPLMDebugString("GPS TARGETING: Camera pointing up, cannot hit ground\\n");
+        return false;
+    }
+    
+    float t = -acY / dirY; // Time to hit ground
+    *outX = acX + dirX * t;
+    *outY = 0.0f; // Ground level
+    *outZ = acZ + dirZ * t;
+    
+    char msg[256];
+    snprintf(msg, sizeof(msg), 
+        "GPS TARGETING: Calculated target from gimbal pan=%.1f° tilt=%.1f° -> (%.1f,%.1f,%.1f)\\n",
+        pan, tilt, *outX, *outY, *outZ);
+    XPLMDebugString(msg);
+    
+    return true;
+}
+
+// Use X-Plane's GPS lock system OR manual calculation
 static void LockGPSTarget(void* inRefcon)
 {
     XPLMDebugString("GPS TARGETING: === LOCKING GPS TARGET ===\\n");
@@ -219,19 +270,32 @@ static void LockGPSTarget(void* inRefcon)
     // Debug current FLIR gimbal first
     DebugGimbalPosition(NULL);
     
-    if (!gGPSLockCommand) {
-        XPLMDebugString("GPS TARGETING: ERROR - GPS lock command not available\\n");
-        return;
+    // Try X-Plane's GPS lock first
+    if (gGPSLockCommand) {
+        XPLMCommandOnce(gGPSLockCommand);
+        XPLMDebugString("GPS TARGETING: GPS lock command executed\\n");
+    } else {
+        XPLMDebugString("GPS TARGETING: GPS lock command not available\\n");
     }
     
-    // Execute GPS lock command
-    XPLMCommandOnce(gGPSLockCommand);
-    XPLMDebugString("GPS TARGETING: GPS lock command executed\\n");
+    // Also try manual calculation from gimbal
+    float manualX, manualY, manualZ;
+    if (CalculateTargetFromGimbal(&manualX, &manualY, &manualZ)) {
+        // Store manual coordinates for fallback
+        gLastTargetX = manualX;
+        gLastTargetY = manualY;
+        gLastTargetZ = manualZ;
+        
+        // Try to set weapon target datarefs manually
+        if (gWeaponTargX && gWeaponTargY && gWeaponTargZ) {
+            XPLMSetDataf(gWeaponTargX, manualX);
+            XPLMSetDataf(gWeaponTargY, manualY);
+            XPLMSetDataf(gWeaponTargZ, manualZ);
+            XPLMDebugString("GPS TARGETING: Set target coordinates manually\\n");
+        }
+    }
     
-    // Give X-Plane a moment to process
-    // (We'll read the results in the next flight loop iteration)
     gTargetLocked = true;
-    
     XPLMDebugString("GPS TARGETING: Target lock initiated - will read coordinates next flight loop\\n");
 }
 
@@ -276,7 +340,7 @@ static void DebugGPSTargeting(void)
 {
     XPLMDebugString("GPS TARGETING: === GPS TARGET DEBUG ===\\n");
     
-    // Read GPS target coordinates
+    // Read GPS target coordinates - LOCAL FIRST
     if (gWeaponTargX && gWeaponTargY && gWeaponTargZ) {
         float targX = XPLMGetDataf(gWeaponTargX);
         float targY = XPLMGetDataf(gWeaponTargY);
@@ -302,6 +366,8 @@ static void DebugGPSTargeting(void)
             gLastTargetY = targY;
             gLastTargetZ = targZ;
         }
+    } else {
+        XPLMDebugString("GPS TARGETING: ERROR - Local target datarefs not available!\\n");
     }
     
     // Read GPS lat/lon/altitude
@@ -313,6 +379,38 @@ static void DebugGPSTargeting(void)
         char msg[256];
         snprintf(msg, sizeof(msg), "GPS TARGETING: Target coords (GPS): %.6f°, %.6f°, %.1fm\\n", 
             targLat, targLon, targH);
+        XPLMDebugString(msg);
+    } else {
+        XPLMDebugString("GPS TARGETING: ERROR - GPS target datarefs not available!\\n");
+    }
+    
+    // Try alternative targeting datarefs
+    XPLMDataRef altTarg1 = XPLMFindDataRef("sim/weapons/target_x");
+    XPLMDataRef altTarg2 = XPLMFindDataRef("sim/weapons/target_y");
+    XPLMDataRef altTarg3 = XPLMFindDataRef("sim/weapons/target_z");
+    
+    if (altTarg1 && altTarg2 && altTarg3) {
+        float altX = XPLMGetDataf(altTarg1);
+        float altY = XPLMGetDataf(altTarg2);
+        float altZ = XPLMGetDataf(altTarg3);
+        
+        char msg[256];
+        snprintf(msg, sizeof(msg), "GPS TARGETING: Alternative target: (%.2f, %.2f, %.2f)\\n", 
+            altX, altY, altZ);
+        XPLMDebugString(msg);
+    }
+    
+    // Check GPS destination (cockpit GPS)
+    XPLMDataRef gpsLat = XPLMFindDataRef("sim/cockpit2/radios/indicators/gps_dme_latitude_deg");
+    XPLMDataRef gpsLon = XPLMFindDataRef("sim/cockpit2/radios/indicators/gps_dme_longitude_deg");
+    
+    if (gpsLat && gpsLon) {
+        double gpsLatVal = XPLMGetDatad(gpsLat);
+        double gpsLonVal = XPLMGetDatad(gpsLon);
+        
+        char msg[256];
+        snprintf(msg, sizeof(msg), "GPS TARGETING: Cockpit GPS dest: %.6f°, %.6f°\\n", 
+            gpsLatVal, gpsLonVal);
         XPLMDebugString(msg);
     }
     
