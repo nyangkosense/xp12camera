@@ -45,6 +45,19 @@ static XPLMDataRef gFLIRTilt = NULL;
 // Terrain probe
 static XPLMProbeRef gTerrainProbe = NULL;
 
+// Real X-Plane weapon system
+static XPLMDataRef gWeaponArmed = NULL;
+static XPLMDataRef gWeaponTargetX = NULL;
+static XPLMDataRef gWeaponTargetY = NULL;
+static XPLMDataRef gWeaponTargetZ = NULL;
+static XPLMDataRef gWeaponFire = NULL;
+static XPLMDataRef gWeaponCount = NULL;
+static float gTargetX = 0.0f;
+static float gTargetY = 0.0f;
+static float gTargetZ = 0.0f;
+static bool gTargetValid = false;
+static bool gWeaponSystemReady = false;
+
 // Matrix operations
 Matrix3x3 CreateRotationMatrixY(float angle_rad);
 Matrix3x3 CreateRotationMatrixX(float angle_rad);
@@ -58,6 +71,11 @@ Matrix3x3 CreateFLIRMatrix(float pan, float tilt);
 static void TestCallback(void* inRefcon);
 static void RunMatrixTest(void);
 bool RaycastToTerrain(Vector3 start, Vector3 direction, Vector3* hitPoint);
+
+// Weapon system functions
+static void FireWeapon(void);
+static void InitializeWeaponSystem(void);
+static void ArmWeaponSystem(void);
 
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 {
@@ -91,9 +109,12 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
         return 0;
     }
 
-    // Register hotkey for manual testing
-    gTestKey = XPLMRegisterHotKey(XPLM_VK_F5, xplm_DownFlag, "Matrix Test", TestCallback, NULL);
-    XPLMDebugString("MATRIX_TEST: Press F5 to test current FLIR direction\n");
+    // Initialize weapon system
+    InitializeWeaponSystem();
+    
+    // Register hotkey for weapon firing
+    gTestKey = XPLMRegisterHotKey(XPLM_VK_F5, xplm_DownFlag, "Fire Weapon", TestCallback, NULL);
+    XPLMDebugString("WEAPON_SYS: Press F5 to fire weapon at FLIR aim point\n");
 
     return 1;
 }
@@ -113,10 +134,10 @@ PLUGIN_API void XPluginDisable(void) { }
 PLUGIN_API int XPluginEnable(void) { return 1; }
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFromWho, int inMessage, void* inParam) { }
 
-// Hotkey callback for manual testing
+// Hotkey callback for weapon firing
 static void TestCallback(void* inRefcon)
 {
-    RunMatrixTest();
+    FireWeapon();
 }
 
 // Matrix operations
@@ -338,6 +359,11 @@ static void RunMatrixTest(void)
     // Raycast to terrain
     Vector3 hitPoint;
     if (RaycastToTerrain(startPos, worldDirection, &hitPoint)) {
+        // Store target coordinates for missile system
+        gTargetX = hitPoint.x;
+        gTargetY = hitPoint.y;
+        gTargetZ = hitPoint.z;
+        gTargetValid = true;
         // Calculate distance and bearing
         float deltaX = hitPoint.x - acX;
         float deltaY = hitPoint.y - acY;
@@ -345,8 +371,7 @@ static void RunMatrixTest(void)
         
         float slantRange = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
         float groundRange = sqrt(deltaX*deltaX + deltaZ*deltaZ);
-        float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI; // X-Plane: -Z=North, so use -deltaZ for North reference
-        if (bearing < 0.0f) bearing += 360.0f; // Convert to 0-360° range
+        float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI; // -deltaZ because +Z=South
         
         snprintf(msg, sizeof(msg), 
             "MATRIX_TEST: Target - SlantRange=%.1fm GroundRange=%.1fm Bearing=%.1f°\n",
@@ -368,8 +393,8 @@ static void RunMatrixTest(void)
         
         // Check 2: Bearing vs world heading consistency  
         float expectedBearing = worldHeading; // Should match calculated world heading
-        if (expectedBearing < 0.0f) expectedBearing += 360.0f; // Convert to 0-360° range
-        if (expectedBearing >= 360.0f) expectedBearing -= 360.0f;
+        if (expectedBearing > 180.0f) expectedBearing -= 360.0f;
+        if (expectedBearing < -180.0f) expectedBearing += 360.0f;
         
         float bearingDifference = fabs(bearing - expectedBearing);
         if (bearingDifference > 180.0f) bearingDifference = 360.0f - bearingDifference;
@@ -407,4 +432,128 @@ static void RunMatrixTest(void)
     }
     
     XPLMDebugString("MATRIX_TEST: ==========================================\n");
+}
+
+// Real X-Plane Weapon System Implementation
+static void InitializeWeaponSystem(void)
+{
+    XPLMDebugString("WEAPON_SYS: Initializing X-Plane weapon system...\n");
+    
+    // Find weapon system datarefs
+    gWeaponArmed = XPLMFindDataRef("sim/weapons/armed");
+    gWeaponTargetX = XPLMFindDataRef("sim/weapons/target_x");
+    gWeaponTargetY = XPLMFindDataRef("sim/weapons/target_y");
+    gWeaponTargetZ = XPLMFindDataRef("sim/weapons/target_z");
+    gWeaponFire = XPLMFindDataRef("sim/weapons/fire_1");
+    gWeaponCount = XPLMFindDataRef("sim/weapons/warhead_count");
+    
+    // Check if weapon system is available
+    if (gWeaponArmed && gWeaponTargetX && gWeaponTargetY && gWeaponTargetZ) {
+        gWeaponSystemReady = true;
+        XPLMDebugString("WEAPON_SYS: Weapon system ready!\n");
+        ArmWeaponSystem();
+    } else {
+        gWeaponSystemReady = false;
+        XPLMDebugString("WEAPON_SYS: WARNING - Weapon datarefs not found, using fallback mode\n");
+    }
+}
+
+static void ArmWeaponSystem(void)
+{
+    if (!gWeaponSystemReady) return;
+    
+    // Arm the weapon system
+    XPLMSetDatai(gWeaponArmed, 1);
+    XPLMDebugString("WEAPON_SYS: MASTER ARM - ON\n");
+    
+    // Check weapon count
+    if (gWeaponCount) {
+        int weaponCount = XPLMGetDatai(gWeaponCount);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "WEAPON_SYS: Weapons available: %d\n", weaponCount);
+        XPLMDebugString(msg);
+    }
+}
+
+static void FireWeapon(void)
+{
+    XPLMDebugString("WEAPON_SYS: ==========================================\n");
+    XPLMDebugString("WEAPON_SYS: F5 - ENGAGING TARGET WITH GUIDED WEAPON\n");
+    
+    // First calculate target coordinates using FLIR
+    RunMatrixTest();
+    
+    if (!gTargetValid) {
+        XPLMDebugString("WEAPON_SYS: ABORT - No valid target coordinates\n");
+        XPLMDebugString("WEAPON_SYS: ==========================================\n");
+        return;
+    }
+    
+    char msg[256];
+    snprintf(msg, sizeof(msg), 
+        "WEAPON_SYS: Target acquired at (%.1f, %.1f, %.1f)\n",
+        gTargetX, gTargetY, gTargetZ);
+    XPLMDebugString(msg);
+    
+    if (gWeaponSystemReady) {
+        // Set target coordinates in X-Plane weapon system
+        XPLMSetDataf(gWeaponTargetX, gTargetX);
+        XPLMSetDataf(gWeaponTargetY, gTargetY);
+        XPLMSetDataf(gWeaponTargetZ, gTargetZ);
+        
+        XPLMDebugString("WEAPON_SYS: Target coordinates loaded into weapon system\n");
+        
+        // Check if armed
+        int armed = XPLMGetDatai(gWeaponArmed);
+        if (armed) {
+            XPLMDebugString("WEAPON_SYS: WEAPON ARMED - FIRING!\n");
+            
+            // Fire weapon
+            if (gWeaponFire) {
+                XPLMSetDatai(gWeaponFire, 1);
+                XPLMDebugString("WEAPON_SYS: *** WEAPON FIRED ***\n");
+                
+                // Calculate range and bearing for confirmation
+                float acX = XPLMGetDataf(gAircraftX);
+                float acY = XPLMGetDataf(gAircraftY);
+                float acZ = XPLMGetDataf(gAircraftZ);
+                
+                float deltaX = gTargetX - acX;
+                float deltaY = gTargetY - acY;
+                float deltaZ = gTargetZ - acZ;
+                float range = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
+                float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI;
+                
+                snprintf(msg, sizeof(msg), 
+                    "WEAPON_SYS: Target range: %.1fm, bearing: %.1f°\n",
+                    range, bearing);
+                XPLMDebugString(msg);
+            } else {
+                XPLMDebugString("WEAPON_SYS: ERROR - Cannot fire weapon (fire dataref not found)\n");
+            }
+        } else {
+            XPLMDebugString("WEAPON_SYS: ERROR - Weapon not armed! Press F5 again to arm and fire.\n");
+            ArmWeaponSystem(); // Try to arm for next time
+        }
+    } else {
+        // Fallback mode - just log the engagement
+        XPLMDebugString("WEAPON_SYS: SIMULATED ENGAGEMENT (no weapon system)\n");
+        
+        float acX = XPLMGetDataf(gAircraftX);
+        float acY = XPLMGetDataf(gAircraftY);
+        float acZ = XPLMGetDataf(gAircraftZ);
+        
+        float deltaX = gTargetX - acX;
+        float deltaY = gTargetY - acY;
+        float deltaZ = gTargetZ - acZ;
+        float range = sqrt(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ);
+        float bearing = atan2(deltaX, -deltaZ) * 180.0f / M_PI;
+        
+        snprintf(msg, sizeof(msg), 
+            "WEAPON_SYS: SIMULATED STRIKE - Range: %.1fm, Bearing: %.1f°\n",
+            range, bearing);
+        XPLMDebugString(msg);
+    }
+    
+    XPLMDebugString("WEAPON_SYS: ==========================================\n");
 }
