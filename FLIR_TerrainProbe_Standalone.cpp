@@ -76,13 +76,21 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
         XPLMDebugString("TERRAIN PROBE: Warning - FLIR camera datarefs not found. Make sure FLIR camera plugin is loaded first.\n");
     }
     
-    // Weapon system datarefs
+    // Weapon system datarefs - try multiple possibilities
     gWeaponX = XPLMFindDataRef("sim/weapons/x");
     gWeaponY = XPLMFindDataRef("sim/weapons/y");
     gWeaponZ = XPLMFindDataRef("sim/weapons/z");
     gWeaponVX = XPLMFindDataRef("sim/weapons/vx");
     gWeaponVY = XPLMFindDataRef("sim/weapons/vy");
     gWeaponVZ = XPLMFindDataRef("sim/weapons/vz");
+    
+    // Debug: Check if weapon datarefs exist
+    if (!gWeaponX || !gWeaponY || !gWeaponZ) {
+        XPLMDebugString("TERRAIN PROBE: Warning - weapon position datarefs not found\n");
+    }
+    if (!gWeaponVX || !gWeaponVY || !gWeaponVZ) {
+        XPLMDebugString("TERRAIN PROBE: Warning - weapon velocity datarefs not found\n");
+    }
 
     // Create terrain probe
     gTerrainProbe = XPLMCreateProbe(xplm_ProbeY);
@@ -211,19 +219,34 @@ static bool GetFLIRTerrainIntersection(float* outX, float* outY, float* outZ)
     // Convert to radians
     float headingRad = acHeading * M_PI / 180.0f;
     float pitchRad = acPitch * M_PI / 180.0f;
-    
-    // Add FLIR camera angles (relative to aircraft)
     float panRad = cameraPan * M_PI / 180.0f;
     float tiltRad = cameraTilt * M_PI / 180.0f;
     
-    // Calculate FLIR camera direction vector
+    // Create aircraft rotation matrix (heading, pitch, roll order)
+    float cosH = cos(headingRad), sinH = sin(headingRad);
+    float cosP = cos(pitchRad), sinP = sin(pitchRad);
+    // Note: Using simplified 2D rotation for now, can expand to full 3D later
+    
+    // Create FLIR gimbal rotation matrix (pan=yaw, tilt=pitch)
+    float cosPan = cos(panRad), sinPan = sin(panRad);
+    float cosTilt = cos(tiltRad), sinTilt = sin(tiltRad);
+    
+    // Combined rotation: aircraft orientation + gimbal orientation
+    // This is a simplified version - proper 3D rotation matrices would be better
     float totalHeading = headingRad + panRad;
     float totalPitch = pitchRad + tiltRad;
     
-    // Direction vector from camera position
+    // Direction vector pointing down the gimbal boresight
+    // In aircraft coordinates, camera points down (negative Y)
+    // Transform to world coordinates
     float dirX = sin(totalHeading) * cos(totalPitch);
-    float dirY = sin(totalPitch);
+    float dirY = -sin(totalPitch);  // Negative for downward looking
     float dirZ = cos(totalHeading) * cos(totalPitch);
+    
+    char dirMsg[256];
+    snprintf(dirMsg, sizeof(dirMsg), "TERRAIN PROBE: Direction vector=(%.3f,%.3f,%.3f) heading=%.1f° pitch=%.1f° pan=%.1f° tilt=%.1f°\n",
+        dirX, dirY, dirZ, acHeading, acPitch, cameraPan, cameraTilt);
+    XPLMDebugString(dirMsg);
     
     // Use precise binary search to find terrain intersection
     float range;
@@ -260,12 +283,34 @@ static void ProbeTerrainTarget(void* inRefcon)
 // Enhanced missile guidance using precise terrain coordinates
 static float GuideMissileToTarget(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefcon)
 {
+    // Debug: Check if we even have a target
+    static float targetDebugTimer = 0.0f;
+    targetDebugTimer += inElapsedSinceLastCall;
+    if (targetDebugTimer >= 5.0f) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "TERRAIN PROBE: Flight loop running, target valid=%s\n", 
+            gTargetValid ? "YES" : "NO");
+        XPLMDebugString(msg);
+        targetDebugTimer = 0.0f;
+    }
+    
     if (!gTargetValid) return -1.0f;
     
     // Get current weapon position
     float weaponX = XPLMGetDataf(gWeaponX);
     float weaponY = XPLMGetDataf(gWeaponY);
     float weaponZ = XPLMGetDataf(gWeaponZ);
+    
+    // Debug: Check weapon status
+    static float weaponDebugTimer = 0.0f;
+    weaponDebugTimer += inElapsedSinceLastCall;
+    if (weaponDebugTimer >= 3.0f) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "TERRAIN PROBE: Weapon pos=(%.2f,%.2f,%.2f)\n", 
+            weaponX, weaponY, weaponZ);
+        XPLMDebugString(msg);
+        weaponDebugTimer = 0.0f;
+    }
     
     // Check if weapon exists and is in flight
     if (weaponX == 0.0f && weaponY == 0.0f && weaponZ == 0.0f) {
