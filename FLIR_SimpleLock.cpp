@@ -1,8 +1,5 @@
 /*
- * FLIR_SimpleLock.cpp
- * 
- * Simple camera lock system for FLIR targeting
- * Freezes camera movement when locked on target
+ * Simple camera lock system that freezes FLIR camera movement when locked on target
  */
 
 #include <string.h>

@@ -1,6 +1,4 @@
--- FLIR Camera HUD Display Script for FlyWithLua
--- Auto-toggles based on camera view with realistic military HUD
--- Press F9 to toggle on/off
+-- FLIR Camera HUD Display Script for FlyWithLua with realistic military HUD that auto-toggles based on camera view
 
 flir_start_time = flir_start_time or os.time()
 flir_hud_enabled = flir_hud_enabled or true

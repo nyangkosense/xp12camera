@@ -1,8 +1,5 @@
 /*
- * FLIR_VisualEffects.cpp
- * 
- * Visual effects system for realistic military camera simulation
- * Implements monochrome filters, thermal effects, and military camera aesthetics
+ * Visual effects system implementing monochrome filters, thermal effects, and military camera aesthetics for realistic FLIR simulation
  */
 
 #include <string.h>
@@ -21,7 +18,6 @@
 #include "XPLMUtilities.h"
 #include "FLIR_VisualEffects.h"
 
-// OpenGL includes for MinGW
 #include <windows.h>
 #include <GL/gl.h>
 
@@ -170,21 +166,18 @@ void RenderCameraNoise(int screenWidth, int screenHeight)
 {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Random noise points for camera grain effect
     glColor4f(1.0f, 1.0f, 1.0f, gNoiseIntensity);
     glPointSize(1.0f);
     
     glBegin(GL_POINTS);
     
-    // Generate pseudo-random noise based on frame counter
-    srand(gFrameCounter / 2); // Change noise every 2 frames
+    srand(gFrameCounter / 2);
     
-    int noisePoints = (screenWidth * screenHeight) / 2000; // Density control
+    int noisePoints = (screenWidth * screenHeight) / 2000;
     for (int i = 0; i < noisePoints; i++) {
         float x = rand() % screenWidth;
         float y = rand() % screenHeight;
         
-        // Vary intensity per pixel
         float intensity = (rand() % 100) / 100.0f * gNoiseIntensity;
         glColor4f(intensity, intensity, intensity, intensity);
         glVertex2f(x, y);
@@ -192,8 +185,7 @@ void RenderCameraNoise(int screenWidth, int screenHeight)
     
     glEnd();
     
-    // Add electronic interference lines occasionally
-    if ((gFrameCounter % 120) < 3) { // Brief interference every 2 seconds
+    if ((gFrameCounter % 120) < 3) {
         glColor4f(1.0f, 1.0f, 1.0f, 0.3f);
         glLineWidth(1.0f);
         
@@ -215,7 +207,6 @@ void RenderScanLines(int screenWidth, int screenHeight)
     glColor4f(0.0f, 0.0f, 0.0f, gScanLineOpacity);
     glLineWidth(1.0f);
     
-    // Horizontal scan lines every 2-3 pixels
     glBegin(GL_LINES);
     for (int y = 2; y < screenHeight; y += 3) {
         glVertex2f(0, y);
@@ -226,11 +217,9 @@ void RenderScanLines(int screenWidth, int screenHeight)
 
 void RenderIRFilter(int screenWidth, int screenHeight)
 {
-    // IR Black/White high contrast filter
-    glBlendFunc(GL_DST_COLOR, GL_ZERO); // Multiply blend for desaturation
+    glBlendFunc(GL_DST_COLOR, GL_ZERO);
     
-    // Create strong black/white contrast effect
-    glColor4f(0.4f, 0.4f, 0.4f, 1.0f); // Desaturate and darken
+    glColor4f(0.4f, 0.4f, 0.4f, 1.0f);
     
     glBegin(GL_QUADS);
     glVertex2f(0, 0);
@@ -239,10 +228,8 @@ void RenderIRFilter(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Add high contrast overlay
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Boost contrast for IR effect
     float contrast = gContrast * 1.5f;
     glColor4f(contrast, contrast, contrast, 0.3f);
     
@@ -253,11 +240,9 @@ void RenderIRFilter(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Add IR-style edge enhancement
     glColor4f(1.0f, 1.0f, 1.0f, 0.1f);
     glLineWidth(1.0f);
     
-    // Subtle grid pattern for IR sensor simulation
     glBegin(GL_LINES);
     for (int x = 0; x < screenWidth; x += 8) {
         glVertex2f(x, 0);
@@ -273,7 +258,7 @@ void RenderIRFilter(int screenWidth, int screenHeight)
 void CycleVisualModes()
 {
     static int mode = 0;
-    mode = (mode + 1) % 4; // Only 4 modes now
+    mode = (mode + 1) % 4;
     
     switch (mode) {
         case 0:

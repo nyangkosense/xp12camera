@@ -1,6 +1,4 @@
 /*
- * FLIR_VisualEffects.h
- * 
  * Header file for military camera visual effects system
  */
 

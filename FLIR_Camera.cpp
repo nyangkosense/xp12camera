@@ -1,13 +1,6 @@
 /*
- * FLIR_Camera.cpp
- * 
- * A realistic FLIR camera system plugin for X-Plane 12
- * Features:
- * - Real camera positioning under aircraft (belly-mounted)
- * - True optical zoom with zoom parameter
- * - Pan/tilt camera controls with mouse
- * - Military-style targeting reticles
- * 
+ * X-Plane 12 FLIR camera simulation plugin with realistic belly-mounted camera positioning,
+ * optical zoom, pan/tilt controls, military-style targeting reticles, and thermal overlay effects
  */
 
 #include <string.h>
