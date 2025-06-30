@@ -73,6 +73,8 @@ static float gCameraDistance = 3.0f;
 static int gLastMouseX = 0;
 static int gLastMouseY = 0;
 static float gMouseSensitivity = 0.2f;
+static float gBasePanSpeed = 0.5f;
+static float gBaseTiltSpeed = 0.5f;
 static void ActivateFLIRCallback(void* inRefcon);
 static void ZoomInCallback(void* inRefcon);
 static void ZoomOutCallback(void* inRefcon);
@@ -85,6 +87,7 @@ static void FocusLockCallback(void* inRefcon);
 static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosingControl, void* inRefcon);
 static int DrawThermalOverlay(XPLMDrawingPhase inPhase, int inIsBefore, void* inRefcon);
 static void DrawRealisticThermalOverlay(void);
+static float GetZoomBasedSensitivity(float baseSpeed);
  
 PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 {
@@ -130,6 +133,8 @@ PLUGIN_API void XPluginStop(void)
         XPLMDontControlCamera();
         gCameraActive = 0;
     }
+    
+    CleanupShaders();
 }
 PLUGIN_API void XPluginDisable(void) { }
 PLUGIN_API int XPluginEnable(void) { return 1; }
@@ -203,10 +208,18 @@ static void ZoomOutCallback(void* inRefcon)
     }
 }
  
+static float GetZoomBasedSensitivity(float baseSpeed)
+{
+    float zoomFactor = gZoomLevel / 64.0f;
+    float sensitivity = baseSpeed * (1.0f - (zoomFactor * 0.95f));
+    return fmaxf(sensitivity, baseSpeed * 0.05f);
+}
+
 static void PanLeftCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraPan -= 0.5f;
+        float speed = GetZoomBasedSensitivity(gBasePanSpeed);
+        gCameraPan -= speed;
         if (gCameraPan < -180.0f) gCameraPan += 360.0f;
     }
 }
@@ -214,7 +227,8 @@ static void PanLeftCallback(void* inRefcon)
 static void PanRightCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraPan += 0.5f;
+        float speed = GetZoomBasedSensitivity(gBasePanSpeed);
+        gCameraPan += speed;
         if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
     }
 }
@@ -222,14 +236,16 @@ static void PanRightCallback(void* inRefcon)
 static void TiltUpCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraTilt = fminf(gCameraTilt + 0.5f, 45.0f);
+        float speed = GetZoomBasedSensitivity(gBaseTiltSpeed);
+        gCameraTilt = fminf(gCameraTilt + speed, 45.0f);
     }
 }
  
 static void TiltDownCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraTilt = fmaxf(gCameraTilt - 0.5f, -90.0f);
+        float speed = GetZoomBasedSensitivity(gBaseTiltSpeed);
+        gCameraTilt = fmaxf(gCameraTilt - speed, -90.0f);
     }
 }
  
@@ -286,8 +302,9 @@ static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosin
         XPLMGetMouseLocation(&mouseX, &mouseY);
         
         if (gLastMouseX != 0 || gLastMouseY != 0) {
-            float deltaX = (mouseX - gLastMouseX) * gMouseSensitivity;
-            float deltaY = (mouseY - gLastMouseY) * gMouseSensitivity;
+            float zoomBasedMouseSensitivity = GetZoomBasedSensitivity(gMouseSensitivity);
+            float deltaX = (mouseX - gLastMouseX) * zoomBasedMouseSensitivity;
+            float deltaY = (mouseY - gLastMouseY) * zoomBasedMouseSensitivity;
             
             gCameraPan += deltaX;
             gCameraTilt -= deltaY;

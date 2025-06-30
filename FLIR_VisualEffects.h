@@ -38,6 +38,8 @@ void SetMonochromeFilter(int enabled);
 void SetThermalMode(int enabled);
 void SetIRMode(int enabled);
 void SetImageEnhancement(float brightness, float contrast);
+void SetContrastCurve(float gamma, float gain, float bias);
+void SetEdgeEnhancement(int enabled, float intensity);
 void RenderMonochromeFilter(int screenWidth, int screenHeight);
 void RenderThermalEffects(int screenWidth, int screenHeight);
 void RenderIRFilter(int screenWidth, int screenHeight);
@@ -45,6 +47,15 @@ void RenderCameraNoise(int screenWidth, int screenHeight);
 void RenderScanLines(int screenWidth, int screenHeight);
 void CycleVisualModes();
 void GetVisualEffectsStatus(char* statusBuffer, int bufferSize);
+void RenderContrastEnhancement(int screenWidth, int screenHeight);
+void RenderEdgeEnhancement(int screenWidth, int screenHeight);
+
+// Shader-based processing
+void InitializeShaders();
+void CleanupShaders();
+void RenderWithShader(int screenWidth, int screenHeight);
+int LoadShader(const char* vertexPath, const char* fragmentPath);
+void UseShaderMode(int shaderMode);
 
 #ifdef __cplusplus
 }
