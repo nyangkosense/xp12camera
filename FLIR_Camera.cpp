@@ -203,10 +203,20 @@ static void ZoomOutCallback(void* inRefcon)
     }
 }
  
+static float GetZoomBasedSensitivity(float baseSpeed)
+{
+    // Scale sensitivity inversely with zoom level
+    // At 1x zoom: full speed, at 64x zoom: much slower
+    float zoomFactor = gZoomLevel / 64.0f;
+    float sensitivity = baseSpeed * (1.0f - (zoomFactor * 0.95f));
+    return fmaxf(sensitivity, baseSpeed * 0.05f); // Minimum 5% of base speed
+}
+
 static void PanLeftCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraPan -= 0.5f;
+        float speed = GetZoomBasedSensitivity(0.5f);
+        gCameraPan -= speed;
         if (gCameraPan < -180.0f) gCameraPan += 360.0f;
     }
 }
@@ -214,7 +224,8 @@ static void PanLeftCallback(void* inRefcon)
 static void PanRightCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraPan += 0.5f;
+        float speed = GetZoomBasedSensitivity(0.5f);
+        gCameraPan += speed;
         if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
     }
 }
@@ -222,14 +233,16 @@ static void PanRightCallback(void* inRefcon)
 static void TiltUpCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraTilt = fminf(gCameraTilt + 0.5f, 45.0f);
+        float speed = GetZoomBasedSensitivity(0.5f);
+        gCameraTilt = fminf(gCameraTilt + speed, 45.0f);
     }
 }
  
 static void TiltDownCallback(void* inRefcon)
 {
     if (gCameraActive && !IsSimpleLockActive()) {
-        gCameraTilt = fmaxf(gCameraTilt - 0.5f, -90.0f);
+        float speed = GetZoomBasedSensitivity(0.5f);
+        gCameraTilt = fmaxf(gCameraTilt - speed, -90.0f);
     }
 }
  
@@ -286,8 +299,9 @@ static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosin
         XPLMGetMouseLocation(&mouseX, &mouseY);
         
         if (gLastMouseX != 0 || gLastMouseY != 0) {
-            float deltaX = (mouseX - gLastMouseX) * gMouseSensitivity;
-            float deltaY = (mouseY - gLastMouseY) * gMouseSensitivity;
+            float zoomBasedMouseSensitivity = GetZoomBasedSensitivity(gMouseSensitivity);
+            float deltaX = (mouseX - gLastMouseX) * zoomBasedMouseSensitivity;
+            float deltaY = (mouseY - gLastMouseY) * zoomBasedMouseSensitivity;
             
             gCameraPan += deltaX;
             gCameraTilt -= deltaY;
