@@ -407,20 +407,27 @@ void RenderSmartMonochrome(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Sky darkening (fake heat signature)
-    glColor4f(0.0f, 0.0f, 0.0f, 0.4f);
+    // Smooth atmospheric gradient (sky to ground)
     glBegin(GL_QUADS);
+    // Sky (top) - darker/cooler
+    glColor4f(0.0f, 0.0f, 0.0f, 0.25f);
     glVertex2f(0, 0);
     glVertex2f(screenWidth, 0);
-    glVertex2f(screenWidth, screenHeight * 0.4f);
-    glVertex2f(0, screenHeight * 0.4f);
+    
+    // Horizon (middle) - neutral
+    glColor4f(0.0f, 0.0f, 0.0f, 0.05f);
+    glVertex2f(screenWidth, screenHeight * 0.5f);
+    glVertex2f(0, screenHeight * 0.5f);
     glEnd();
     
-    // Ground warming effect  
-    glColor4f(0.2f, 0.3f, 0.2f, 0.3f);
     glBegin(GL_QUADS);
-    glVertex2f(0, screenHeight * 0.6f);
-    glVertex2f(screenWidth, screenHeight * 0.6f);
+    // Horizon (middle) - neutral  
+    glColor4f(0.1f, 0.15f, 0.1f, 0.05f);
+    glVertex2f(0, screenHeight * 0.5f);
+    glVertex2f(screenWidth, screenHeight * 0.5f);
+    
+    // Ground (bottom) - warmer
+    glColor4f(0.15f, 0.2f, 0.15f, 0.15f);
     glVertex2f(screenWidth, screenHeight);
     glVertex2f(0, screenHeight);
     glEnd();
@@ -449,20 +456,27 @@ void RenderSmartThermal(int screenWidth, int screenHeight)
     glVertex2f(0, screenHeight);
     glEnd();
     
-    // Sky cooling (darker in thermal)
-    glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
+    // Smooth thermal gradient (cold sky to warm ground)
     glBegin(GL_QUADS);
+    // Cold sky (top)
+    glColor4f(0.0f, 0.0f, 0.0f, 0.3f);
     glVertex2f(0, 0);
     glVertex2f(screenWidth, 0);
-    glVertex2f(screenWidth, screenHeight * 0.4f);
-    glVertex2f(0, screenHeight * 0.4f);
+    
+    // Horizon (middle) - neutral
+    glColor4f(0.0f, 0.0f, 0.0f, 0.05f);
+    glVertex2f(screenWidth, screenHeight * 0.5f);
+    glVertex2f(0, screenHeight * 0.5f);
     glEnd();
     
-    // Ground heating effect
-    glColor4f(0.3f, 0.3f, 0.3f, 0.3f);
     glBegin(GL_QUADS);
-    glVertex2f(0, screenHeight * 0.7f);
-    glVertex2f(screenWidth, screenHeight * 0.7f);
+    // Horizon (middle) - neutral
+    glColor4f(0.1f, 0.1f, 0.1f, 0.05f);
+    glVertex2f(0, screenHeight * 0.5f);
+    glVertex2f(screenWidth, screenHeight * 0.5f);
+    
+    // Warm ground (bottom)
+    glColor4f(0.2f, 0.2f, 0.2f, 0.2f);
     glVertex2f(screenWidth, screenHeight);
     glVertex2f(0, screenHeight);
     glEnd();
