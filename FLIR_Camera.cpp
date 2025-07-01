@@ -207,11 +207,33 @@ static void ZoomOutCallback(void* inRefcon)
  
 static float GetZoomBasedSensitivity(float baseSpeed)
 {
-    // Scale sensitivity inversely with zoom level
-    // At 1x zoom: full speed, at 64x zoom: much slower
-    float zoomFactor = gZoomLevel / 64.0f;
-    float sensitivity = baseSpeed * (1.0f - (zoomFactor * 0.95f));
-    return fmaxf(sensitivity, baseSpeed * 0.05f); // Minimum 5% of base speed
+    // Enhanced zoom sensitivity algorithm for all zoom levels
+    // Uses logarithmic scaling for more natural feel
+    
+    // Clamp zoom level to reasonable range
+    float clampedZoom = fmaxf(1.0f, fminf(gZoomLevel, 64.0f));
+    
+    // Logarithmic scaling feels more natural for zoom sensitivity
+    // log(1) = 0, log(64) ≈ 4.16
+    float logZoom = logf(clampedZoom);
+    float maxLogZoom = logf(64.0f); // ≈ 4.16
+    
+    // Normalize to 0-1 range
+    float normalizedZoom = logZoom / maxLogZoom;
+    
+    // Apply sensitivity curve - more aggressive at higher zooms
+    // At 1x zoom: 100% sensitivity
+    // At 2x zoom: ~85% sensitivity  
+    // At 8x zoom: ~50% sensitivity
+    // At 32x zoom: ~15% sensitivity
+    // At 64x zoom: ~3% sensitivity
+    float sensitivityMultiplier = 1.0f - (normalizedZoom * normalizedZoom * 0.97f);
+    
+    // Apply minimum threshold for usability
+    float minSensitivity = baseSpeed * 0.03f; // 3% minimum
+    float finalSensitivity = baseSpeed * sensitivityMultiplier;
+    
+    return fmaxf(finalSensitivity, minSensitivity);
 }
 
 static void PanLeftCallback(void* inRefcon)
