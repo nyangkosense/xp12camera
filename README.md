@@ -1,3 +1,4 @@
+
 FLIR Camera Plugin for X-Plane 12
 ===================================
 
