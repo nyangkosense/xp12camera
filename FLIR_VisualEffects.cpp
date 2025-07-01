@@ -55,8 +55,15 @@ static float gScanLineOpacity = 0.05f;
 static int gFrameCounter = 0;
 static int gPostProcessingEnabled = 1;
 static unsigned char* gPixelBuffer = NULL;
+static unsigned char* gProcessedBuffer = NULL;
 static int gBufferWidth = 0;
 static int gBufferHeight = 0;
+static int gProcessingCounter = 0;
+static int gProcessingSkip = 2; // Process every 3rd frame
+static float gProcessingScale = 0.5f; // Process at half resolution
+
+// Forward declarations
+void ProcessEOIROptimized(unsigned char* input, unsigned char* output, int width, int height, int mode);
 
 void InitializeVisualEffects()
 {
@@ -69,20 +76,31 @@ void CleanupVisualEffects()
         free(gPixelBuffer);
         gPixelBuffer = NULL;
     }
+    if (gProcessedBuffer) {
+        free(gProcessedBuffer);
+        gProcessedBuffer = NULL;
+    }
 }
 
-// Safety function to allocate pixel buffer
+// Safety function to allocate pixel buffers
 int AllocatePixelBuffer(int width, int height)
 {
-    int newSize = width * height * 3; // RGB
+    int fullSize = width * height * 3; // RGB for full resolution
+    int processedSize = fullSize;
     
     if (!gPixelBuffer || gBufferWidth != width || gBufferHeight != height) {
         if (gPixelBuffer) {
             free(gPixelBuffer);
         }
+        if (gProcessedBuffer) {
+            free(gProcessedBuffer);
+        }
         
-        gPixelBuffer = (unsigned char*)malloc(newSize);
-        if (!gPixelBuffer) {
+        gPixelBuffer = (unsigned char*)malloc(fullSize);
+        gProcessedBuffer = (unsigned char*)malloc(processedSize);
+        
+        if (!gPixelBuffer || !gProcessedBuffer) {
+            CleanupVisualEffects();
             return 0; // Failed to allocate
         }
         
@@ -163,7 +181,7 @@ void ProcessEOIR(unsigned char* pixels, int width, int height, int mode)
     }
 }
 
-// Main post-processing function with safety checks
+// Optimized post-processing function
 void RenderPostProcessing(int screenWidth, int screenHeight)
 {
     // Safety check: skip if too small or too large
@@ -172,43 +190,152 @@ void RenderPostProcessing(int screenWidth, int screenHeight)
         return;
     }
     
-    // Allocate buffer if needed
-    if (!AllocatePixelBuffer(screenWidth, screenHeight)) {
-        return; // Failed to allocate, skip processing
-    }
+    // Skip frames for better performance
+    gProcessingCounter++;
+    int shouldProcess = (gProcessingCounter % (gProcessingSkip + 1)) == 0;
     
-    // Clear any OpenGL errors before we start
-    while (glGetError() != GL_NO_ERROR) { }
-    
-    // Read the current framebuffer
-    glReadPixels(0, 0, screenWidth, screenHeight, GL_RGB, GL_UNSIGNED_BYTE, gPixelBuffer);
-    
-    // Check for OpenGL errors
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        return; // Failed to read pixels, skip processing
-    }
-    
-    // Determine processing mode based on current visual effects
+    // Determine processing mode
     int processingMode = 0;
     if (gMonochromeEnabled) processingMode = 1;
     else if (gThermalEnabled) processingMode = 2;
     else if (gIREnabled) processingMode = 3;
     
-    // Only process if we have an active mode
-    if (processingMode > 0) {
-        ProcessEOIR(gPixelBuffer, screenWidth, screenHeight, processingMode);
+    if (processingMode == 0) return; // No processing needed
+    
+    // Allocate buffers if needed
+    if (!AllocatePixelBuffer(screenWidth, screenHeight)) {
+        return;
     }
     
-    // Draw the processed image back
-    glRasterPos2f(0, 0);
-    glDrawPixels(screenWidth, screenHeight, GL_RGB, GL_UNSIGNED_BYTE, gPixelBuffer);
+    // Only do expensive processing every few frames
+    if (shouldProcess) {
+        // Clear any OpenGL errors
+        while (glGetError() != GL_NO_ERROR) { }
+        
+        // Read framebuffer
+        glReadPixels(0, 0, screenWidth, screenHeight, GL_RGB, GL_UNSIGNED_BYTE, gPixelBuffer);
+        
+        // Check for errors
+        if (glGetError() != GL_NO_ERROR) {
+            return;
+        }
+        
+        // Process with optimized function
+        ProcessEOIROptimized(gPixelBuffer, gProcessedBuffer, screenWidth, screenHeight, processingMode);
+    }
     
-    // Check for errors again
-    error = glGetError();
-    if (error != GL_NO_ERROR) {
-        // If drawing failed, disable post-processing for safety
-        gPostProcessingEnabled = 0;
+    // Always draw the (possibly cached) processed result
+    glRasterPos2f(0, 0);
+    glDrawPixels(screenWidth, screenHeight, GL_RGB, GL_UNSIGNED_BYTE, gProcessedBuffer);
+    
+    // Check for errors
+    if (glGetError() != GL_NO_ERROR) {
+        gPostProcessingEnabled = 0; // Disable on error
+    }
+}
+
+// Much faster processing function with fake heat signatures
+void ProcessEOIROptimized(unsigned char* input, unsigned char* output, int width, int height, int mode)
+{
+    int totalPixels = width * height;
+    int step = 1; // Process every pixel, but optimize the loop
+    
+    // Pre-calculate noise once per frame
+    static int noiseFrame = 0;
+    static float frameNoise = 0.0f;
+    if (noiseFrame != gFrameCounter) {
+        frameNoise = ((rand() % 21) - 10) / 3000.0f; // Even more subtle
+        noiseFrame = gFrameCounter;
+    }
+    
+    for (int i = 0; i < totalPixels; i += step) {
+        int idx = i * 3;
+        int x = i % width;
+        int y = i / width;
+        
+        // Original RGB values
+        unsigned char r = input[idx];
+        unsigned char g = input[idx + 1];
+        unsigned char b = input[idx + 2];
+        
+        // Fast integer-based grayscale conversion
+        int gray = (r * 77 + g * 151 + b * 28) >> 8; // /256
+        
+        // Fake heat signature logic based on color analysis
+        int heatBonus = 0;
+        
+        // Sky detection (blue-ish areas are cold)
+        if (b > r && b > g && b > 100) {
+            heatBonus = -30; // Sky is cold
+        }
+        // Vegetation detection (green areas are cooler)  
+        else if (g > r && g > b && g > 80) {
+            heatBonus = -15; // Vegetation is cooler
+        }
+        // Ground/concrete detection (neutral colors)
+        else if (abs(r - g) < 20 && abs(g - b) < 20 && gray > 60) {
+            heatBonus = 10; // Ground/concrete slightly warm
+        }
+        // Bright objects (could be hot engines, lights, etc)
+        else if (gray > 200) {
+            heatBonus = 25; // Bright objects assumed warm
+        }
+        // Very dark objects (shadows, cold areas)
+        else if (gray < 40) {
+            heatBonus = -20; // Deep shadows are cold
+        }
+        
+        // Ground level is warmer than sky (simple atmospheric model)
+        float skyFactor = (float)y / height; // 0 = top, 1 = bottom
+        heatBonus += (int)(skyFactor * 15); // Ground +15, sky +0
+        
+        // Apply heat simulation based on mode
+        switch (mode) {
+            case 1: // Monochrome - enhanced but not too harsh
+                gray += heatBonus / 2; // Subtle heat effect
+                gray = (gray * 5) >> 2; // *1.25 instead of *1.5
+                if (gray < 0) gray = 20; // Don't go pure black
+                if (gray > 255) gray = 255;
+                
+                // Green tint for night vision
+                output[idx] = (unsigned char)((gray * 180) >> 8);     // R * 0.7
+                output[idx + 1] = (unsigned char)gray;               // G
+                output[idx + 2] = (unsigned char)((gray * 180) >> 8); // B * 0.7
+                break;
+                
+            case 2: // Thermal - with heat signatures
+                gray += heatBonus; // Full heat effect
+                if (gray < 0) gray = 30; // Minimum visible level
+                if (gray > 255) gray = 255;
+                
+                // Don't fully invert - partial inversion looks more realistic
+                gray = 200 - (gray * 3 >> 2); // Partial invert and enhance
+                if (gray < 40) gray = 40; // Keep some visibility
+                if (gray > 255) gray = 255;
+                
+                output[idx] = output[idx + 1] = output[idx + 2] = (unsigned char)gray;
+                break;
+                
+            case 3: // Enhanced IR - high contrast but not crushing
+                gray += heatBonus;
+                if (gray < 0) gray = 25;
+                if (gray > 255) gray = 255;
+                
+                // Less harsh threshold
+                if (gray > 140) gray = 240;
+                else if (gray > 80) gray = 160;
+                else if (gray > 40) gray = 80;
+                else gray = 30; // Minimum visibility
+                
+                output[idx] = output[idx + 1] = output[idx + 2] = (unsigned char)gray;
+                break;
+                
+            default:
+                output[idx] = input[idx];
+                output[idx + 1] = input[idx + 1];
+                output[idx + 2] = input[idx + 2];
+                break;
+        }
     }
 }
 
