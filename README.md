@@ -1,3 +1,4 @@
+![20250626121507_1](https://github.com/user-attachments/assets/8f6e6e33-3dd6-4355-b80e-4718c5836063)
 
 FLIR Camera Plugin for X-Plane 12
 ===================================
