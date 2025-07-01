@@ -32,7 +32,9 @@ extern "C" {
 #endif
 
 void InitializeVisualEffects();
+void CleanupVisualEffects();
 void RenderVisualEffects(int screenWidth, int screenHeight);
+void RenderPostProcessing(int screenWidth, int screenHeight);
 
 void SetMonochromeFilter(int enabled);
 void SetThermalMode(int enabled);
