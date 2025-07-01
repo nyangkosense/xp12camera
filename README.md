@@ -1,4 +1,4 @@
-![20250626121507_1](https://github.com/user-attachments/assets/8f6e6e33-3dd6-4355-b80e-4718c5836063)
+
 
 ![20250701203427_1](https://github.com/user-attachments/assets/d574a85c-31c4-4cac-a477-649f901ee918)
 
@@ -19,6 +19,8 @@ Features
 - Military-style HUD overlay with telemetry
 - Camera noise and scan line effects
 - Real-time flight data display
+
+![20250626121507_1](https://github.com/user-attachments/assets/8f6e6e33-3dd6-4355-b80e-4718c5836063)
 
 Controls
 --------
