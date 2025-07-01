@@ -408,86 +408,44 @@ void RenderMonochromeFilter(int screenWidth, int screenHeight)
 
 void RenderThermalEffects(int screenWidth, int screenHeight)
 {
-    // Simulate thermal color palette overlay with gradients
+    // Much more subtle thermal overlay
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Create thermal gradient zones
-    int zones = 8;
-    float zoneHeight = screenHeight / (float)zones;
+    glColor4f(1.0f, 0.4f, 0.0f, 0.08f); // Very light orange tint
     
     glBegin(GL_QUADS);
-    for (int i = 0; i < zones; i++) {
-        float y1 = i * zoneHeight;
-        float y2 = (i + 1) * zoneHeight;
-        float temp = i / (float)(zones - 1);
-        
-        // Thermal color mapping
-        float r, g, b, alpha;
-        if (temp < 0.25f) {
-            r = 0.0f; g = 0.0f; b = temp * 4.0f * 0.8f;
-            alpha = 0.05f;
-        } else if (temp < 0.5f) {
-            float t = (temp - 0.25f) * 4.0f;
-            r = 0.0f; g = t * 0.6f; b = 0.8f - t * 0.3f;
-            alpha = 0.08f;
-        } else if (temp < 0.75f) {
-            float t = (temp - 0.5f) * 4.0f;
-            r = t * 0.8f; g = 0.6f + t * 0.4f; b = 0.5f - t * 0.5f;
-            alpha = 0.12f;
-        } else {
-            float t = (temp - 0.75f) * 4.0f;
-            r = 0.8f + t * 0.2f; g = 1.0f - t * 0.5f; b = 0.0f;
-            alpha = 0.15f;
-        }
-        
-        glColor4f(r, g, b, alpha);
-        glVertex2f(0, y1);
-        glVertex2f(screenWidth, y1);
-        glVertex2f(screenWidth, y2);
-        glVertex2f(0, y2);
-    }
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
     glEnd();
     
-    // Add thermal noise/shimmer effect
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    // Add very subtle thermal noise
     glPointSize(1.0f);
     glBegin(GL_POINTS);
     
-    srand(gFrameCounter / 3); // Slower thermal fluctuation
-    int thermalPoints = (screenWidth * screenHeight) / 5000;
+    srand(gFrameCounter / 4); // Slower thermal fluctuation
+    int thermalPoints = (screenWidth * screenHeight) / 8000; // Much fewer points
     for (int i = 0; i < thermalPoints; i++) {
         float x = rand() % screenWidth;
         float y = rand() % screenHeight;
         
-        float intensity = (rand() % 30) / 100.0f * 0.2f;
-        float heat = y / (float)screenHeight; // Ground is warmer
-        
-        glColor4f(intensity + heat * 0.1f, intensity * 0.5f, intensity * 0.2f, 0.3f);
+        float intensity = (rand() % 20) / 100.0f * 0.1f; // Much more subtle
+        glColor4f(intensity, intensity * 0.5f, intensity * 0.2f, 0.15f);
         glVertex2f(x, y);
     }
     glEnd();
     
-    // Temperature scale indicator
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
-    glLineWidth(2.0f);
+    // Simple temperature scale indicator
+    glColor4f(1.0f, 1.0f, 1.0f, 0.7f);
+    glLineWidth(1.0f);
     
     glBegin(GL_LINES);
     for (int i = 0; i < 10; i++) {
         float y = 50 + i * (screenHeight - 100) / 10.0f;
         glVertex2f(10, y);
-        glVertex2f(35, y);
-        
-        // Minor ticks
-        if (i < 9) {
-            float yMid = y + (screenHeight - 100) / 20.0f;
-            glVertex2f(15, yMid);
-            glVertex2f(25, yMid);
-        }
+        glVertex2f(25, y);
     }
     glEnd();
-    
-    glLineWidth(1.0f);
 }
 
 void RenderCameraNoise(int screenWidth, int screenHeight)
@@ -498,38 +456,38 @@ void RenderCameraNoise(int screenWidth, int screenHeight)
     glPointSize(1.0f);
     glBegin(GL_POINTS);
     
-    // Temporal noise (changes each frame)
+    // Much more subtle temporal noise
     srand(gFrameCounter / 2);
-    int temporalNoisePoints = (screenWidth * screenHeight) / 3000;
+    int temporalNoisePoints = (screenWidth * screenHeight) / 8000; // Reduced
     for (int i = 0; i < temporalNoisePoints; i++) {
         float x = rand() % screenWidth;
         float y = rand() % screenHeight;
         
-        float intensity = (rand() % 100) / 100.0f * gNoiseIntensity * 0.8f;
-        glColor4f(intensity, intensity, intensity, intensity * 0.6f);
-        glVertex2f(x, y);
-    }
-    
-    // Fixed pattern noise (doesn't change)
-    srand(12345); // Fixed seed for consistent pattern
-    int fixedNoisePoints = (screenWidth * screenHeight) / 8000;
-    for (int i = 0; i < fixedNoisePoints; i++) {
-        float x = rand() % screenWidth;
-        float y = rand() % screenHeight;
-        
-        float intensity = (rand() % 50) / 100.0f * gNoiseIntensity * 0.3f;
+        float intensity = (rand() % 100) / 100.0f * gNoiseIntensity * 0.3f; // Much reduced
         glColor4f(intensity, intensity, intensity, intensity * 0.4f);
         glVertex2f(x, y);
     }
     
-    // Dead pixels
+    // Very subtle fixed pattern noise
+    srand(12345); // Fixed seed for consistent pattern
+    int fixedNoisePoints = (screenWidth * screenHeight) / 15000; // Reduced
+    for (int i = 0; i < fixedNoisePoints; i++) {
+        float x = rand() % screenWidth;
+        float y = rand() % screenHeight;
+        
+        float intensity = (rand() % 30) / 100.0f * gNoiseIntensity * 0.2f; // Much reduced
+        glColor4f(intensity, intensity, intensity, intensity * 0.3f);
+        glVertex2f(x, y);
+    }
+    
+    // Very few dead pixels
     srand(54321);
-    int deadPixels = screenWidth * screenHeight / 50000;
+    int deadPixels = screenWidth * screenHeight / 100000; // Much reduced
     for (int i = 0; i < deadPixels; i++) {
         float x = rand() % screenWidth;
         float y = rand() % screenHeight;
         
-        glColor4f(0.0f, 0.0f, 0.0f, 0.8f);
+        glColor4f(0.0f, 0.0f, 0.0f, 0.5f); // Less opaque
         glVertex2f(x, y);
     }
     

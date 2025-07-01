@@ -80,26 +80,24 @@ float addSensorNoise(vec2 texCoord, float time) {
 vec3 processIR(vec3 color, vec2 texCoord) {
     float luma = getLuminance(color);
     
-    // Simulate IR sensor response curve
-    // IR cameras are sensitive to different wavelengths
-    float irResponse = pow(luma, 0.6) * 1.4;
+    // More moderate IR processing
+    float irResponse = luma;
     
-    // Aggressive contrast curve for IR
-    irResponse = applyContrastCurve(irResponse, 0.4, 3.5, -0.2);
+    // Moderate contrast curve for IR
+    irResponse = applyContrastCurve(irResponse, 0.7, 2.0, 0.1);
     
     // Edge enhancement for better object definition
     float edge = detectEdges(texCoord);
-    irResponse += edge * edgeIntensity * 0.5;
+    irResponse += edge * edgeIntensity * 0.3;
     
-    // IR inversion - hot objects appear white
-    irResponse = 1.0 - irResponse;
+    // IR inversion - hot objects appear white (but less extreme)
+    irResponse = 0.2 + (1.0 - irResponse) * 0.8;
     
-    // Simulate digital gain and quantization
-    irResponse *= 1.8; // Digital gain
-    irResponse = floor(irResponse * 64.0) / 64.0; // Harsh quantization
+    // Light quantization
+    irResponse = floor(irResponse * 128.0) / 128.0;
     
-    // Add realistic sensor noise
-    irResponse += addSensorNoise(texCoord, time) * 0.4;
+    // Add subtle sensor noise
+    irResponse += addSensorNoise(texCoord, time) * 0.1;
     
     // Clamp to valid range
     irResponse = clamp(irResponse, 0.0, 1.0);
@@ -111,32 +109,32 @@ vec3 processIR(vec3 color, vec2 texCoord) {
 vec3 processEnhancedIR(vec3 color, vec2 texCoord) {
     float luma = getLuminance(color);
     
-    // Simulate high-end IR sensor with multiple processing stages
-    float irSignal = pow(luma, 0.5) * 1.6;
+    // Enhanced but still visible processing
+    float irSignal = luma;
     
-    // Aggressive contrast curve with multiple stages
-    irSignal = applyContrastCurve(irSignal, 0.3, 4.0, -0.3);
+    // Strong but not overwhelming contrast curve
+    irSignal = applyContrastCurve(irSignal, 0.5, 2.5, 0.0);
     
     // Multi-pass edge enhancement
     float edge = detectEdges(texCoord);
-    irSignal += edge * edgeIntensity * 1.2;
+    irSignal += edge * edgeIntensity * 0.8;
     
-    // Simulate automatic gain control (AGC)
-    float avgBrightness = 0.5; // Could be calculated from surrounding area
-    float agcGain = clamp(1.0 / (avgBrightness + 0.1), 0.5, 3.0);
+    // Moderate automatic gain control (AGC)
+    float avgBrightness = 0.5;
+    float agcGain = clamp(1.0 / (avgBrightness + 0.2), 0.8, 2.0);
     irSignal *= agcGain;
     
-    // IR inversion - hot objects appear white
-    irSignal = 1.0 - irSignal;
+    // Partial IR inversion - hot objects appear brighter
+    irSignal = 0.3 + (1.0 - irSignal) * 0.7;
     
-    // Harsh quantization to simulate digital processing
-    irSignal = floor(irSignal * 32.0) / 32.0;
+    // Moderate quantization
+    irSignal = floor(irSignal * 64.0) / 64.0;
     
-    // Add characteristic IR noise pattern
-    irSignal += addSensorNoise(texCoord, time) * 0.6;
+    // Add moderate IR noise pattern
+    irSignal += addSensorNoise(texCoord, time) * 0.2;
     
     // Digital sharpening filter
-    float sharpening = detectEdges(texCoord) * 0.8;
+    float sharpening = detectEdges(texCoord) * 0.4;
     irSignal += sharpening;
     
     // Final clamp
@@ -149,30 +147,30 @@ vec3 processEnhancedIR(vec3 color, vec2 texCoord) {
 vec3 processMonochrome(vec3 color, vec2 texCoord) {
     float luma = getLuminance(color);
     
-    // Simulate low-light amplification
-    luma = pow(luma, 0.7) * 2.2;
+    // Moderate low-light amplification
+    luma = pow(luma, 0.8) * 1.6;
     
     // Apply contrast curve
     luma = applyContrastCurve(luma, gamma, gain, bias);
     
-    // Strong edge enhancement for night vision
+    // Moderate edge enhancement for night vision
     float edge = detectEdges(texCoord);
-    luma += edge * edgeIntensity * 0.6;
+    luma += edge * edgeIntensity * 0.3;
     
     // Add slight bloom effect for bright areas
     if (luma > 0.8) {
-        luma += (luma - 0.8) * 0.5;
+        luma += (luma - 0.8) * 0.3;
     }
     
-    // Add subtle sensor noise
-    luma += addSensorNoise(texCoord, time) * 0.15;
+    // Add very subtle sensor noise
+    luma += addSensorNoise(texCoord, time) * 0.05;
     
     // Clamp to prevent overexposure
     luma = clamp(luma, 0.0, 1.0);
     
     // Realistic night vision green tint with slight vignette
-    float vignette = 1.0 - length(texCoord - 0.5) * 0.3;
-    vec3 nightVision = vec3(luma * 0.2, luma * 0.9, luma * 0.15);
+    float vignette = 1.0 - length(texCoord - 0.5) * 0.2;
+    vec3 nightVision = vec3(luma * 0.3, luma * 0.95, luma * 0.25);
     nightVision *= vignette;
     
     return nightVision;
@@ -225,37 +223,33 @@ vec3 getThermalColor(float temperature) {
 
 // Apply thermal simulation with enhanced processing
 vec3 processThermal(vec3 color, vec2 texCoord) {
-    // Add heat shimmer to texture coordinates
-    vec2 shimmerCoord = addHeatShimmer(texCoord, time);
-    vec3 shimmerColor = texture(screenTexture, shimmerCoord).rgb;
+    // Start with the original image
+    float luma = getLuminance(color);
     
-    // Use multiple factors to simulate thermal signatures
-    float luma = getLuminance(shimmerColor);
-    
-    // Fake thermal signature based on color analysis
-    // Sky/bright areas = cold, dark areas = potentially warm
-    // Green vegetation = cooler, concrete/metal = warmer
+    // Subtle thermal processing - keep more of original image
     float thermalSignature = luma;
     
-    // Enhance contrast for thermal effect
-    thermalSignature = applyContrastCurve(thermalSignature, 0.8, 2.2, 0.1);
+    // Light contrast enhancement
+    thermalSignature = applyContrastCurve(thermalSignature, 1.1, 1.4, 0.05);
     
-    // Simulate atmospheric effects - distant objects cooler
-    float distanceFactor = 1.0 - (texCoord.y * 0.3); // Sky is further = cooler
-    thermalSignature *= distanceFactor;
-    
-    // Add subtle noise to simulate sensor imperfections
-    float thermalNoise = addSensorNoise(texCoord, time) * 0.1;
+    // Very subtle noise
+    float thermalNoise = addSensorNoise(texCoord, time) * 0.02;
     thermalSignature += thermalNoise;
     
-    // Apply thermal color mapping
+    // Clamp to valid range
+    thermalSignature = clamp(thermalSignature, 0.0, 1.0);
+    
+    // Apply subtle thermal color mapping - blend with original
     vec3 thermal = getThermalColor(thermalSignature);
     
-    // Add subtle edge enhancement for object definition
-    float edge = detectEdges(texCoord);
-    thermal += edge * 0.2;
+    // Mix with original image to keep visibility
+    vec3 result = mix(color, thermal, 0.6);
     
-    return thermal;
+    // Add very subtle edge enhancement
+    float edge = detectEdges(texCoord);
+    result += edge * 0.1;
+    
+    return result;
 }
 
 void main()
