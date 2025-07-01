@@ -408,62 +408,170 @@ void RenderMonochromeFilter(int screenWidth, int screenHeight)
 
 void RenderThermalEffects(int screenWidth, int screenHeight)
 {
+    // Simulate thermal color palette overlay with gradients
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(1.0f, 0.4f, 0.0f, 0.15f);
+    
+    // Create thermal gradient zones
+    int zones = 8;
+    float zoneHeight = screenHeight / (float)zones;
     
     glBegin(GL_QUADS);
-    glVertex2f(0, 0);
-    glVertex2f(screenWidth, 0);
-    glVertex2f(screenWidth, screenHeight);
-    glVertex2f(0, screenHeight);
+    for (int i = 0; i < zones; i++) {
+        float y1 = i * zoneHeight;
+        float y2 = (i + 1) * zoneHeight;
+        float temp = i / (float)(zones - 1);
+        
+        // Thermal color mapping
+        float r, g, b, alpha;
+        if (temp < 0.25f) {
+            r = 0.0f; g = 0.0f; b = temp * 4.0f * 0.8f;
+            alpha = 0.05f;
+        } else if (temp < 0.5f) {
+            float t = (temp - 0.25f) * 4.0f;
+            r = 0.0f; g = t * 0.6f; b = 0.8f - t * 0.3f;
+            alpha = 0.08f;
+        } else if (temp < 0.75f) {
+            float t = (temp - 0.5f) * 4.0f;
+            r = t * 0.8f; g = 0.6f + t * 0.4f; b = 0.5f - t * 0.5f;
+            alpha = 0.12f;
+        } else {
+            float t = (temp - 0.75f) * 4.0f;
+            r = 0.8f + t * 0.2f; g = 1.0f - t * 0.5f; b = 0.0f;
+            alpha = 0.15f;
+        }
+        
+        glColor4f(r, g, b, alpha);
+        glVertex2f(0, y1);
+        glVertex2f(screenWidth, y1);
+        glVertex2f(screenWidth, y2);
+        glVertex2f(0, y2);
+    }
     glEnd();
     
-    glColor4f(1.0f, 1.0f, 1.0f, 0.8f);
-    glLineWidth(1.0f);
+    // Add thermal noise/shimmer effect
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glPointSize(1.0f);
+    glBegin(GL_POINTS);
+    
+    srand(gFrameCounter / 3); // Slower thermal fluctuation
+    int thermalPoints = (screenWidth * screenHeight) / 5000;
+    for (int i = 0; i < thermalPoints; i++) {
+        float x = rand() % screenWidth;
+        float y = rand() % screenHeight;
+        
+        float intensity = (rand() % 30) / 100.0f * 0.2f;
+        float heat = y / (float)screenHeight; // Ground is warmer
+        
+        glColor4f(intensity + heat * 0.1f, intensity * 0.5f, intensity * 0.2f, 0.3f);
+        glVertex2f(x, y);
+    }
+    glEnd();
+    
+    // Temperature scale indicator
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
+    glLineWidth(2.0f);
     
     glBegin(GL_LINES);
     for (int i = 0; i < 10; i++) {
         float y = 50 + i * (screenHeight - 100) / 10.0f;
         glVertex2f(10, y);
-        glVertex2f(25, y);
+        glVertex2f(35, y);
+        
+        // Minor ticks
+        if (i < 9) {
+            float yMid = y + (screenHeight - 100) / 20.0f;
+            glVertex2f(15, yMid);
+            glVertex2f(25, yMid);
+        }
     }
     glEnd();
+    
+    glLineWidth(1.0f);
 }
 
 void RenderCameraNoise(int screenWidth, int screenHeight)
 {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    glColor4f(1.0f, 1.0f, 1.0f, gNoiseIntensity);
+    // More realistic noise pattern
     glPointSize(1.0f);
-    
     glBegin(GL_POINTS);
     
+    // Temporal noise (changes each frame)
     srand(gFrameCounter / 2);
-    
-    int noisePoints = (screenWidth * screenHeight) / 2000;
-    for (int i = 0; i < noisePoints; i++) {
+    int temporalNoisePoints = (screenWidth * screenHeight) / 3000;
+    for (int i = 0; i < temporalNoisePoints; i++) {
         float x = rand() % screenWidth;
         float y = rand() % screenHeight;
         
-        float intensity = (rand() % 100) / 100.0f * gNoiseIntensity;
-        glColor4f(intensity, intensity, intensity, intensity);
+        float intensity = (rand() % 100) / 100.0f * gNoiseIntensity * 0.8f;
+        glColor4f(intensity, intensity, intensity, intensity * 0.6f);
+        glVertex2f(x, y);
+    }
+    
+    // Fixed pattern noise (doesn't change)
+    srand(12345); // Fixed seed for consistent pattern
+    int fixedNoisePoints = (screenWidth * screenHeight) / 8000;
+    for (int i = 0; i < fixedNoisePoints; i++) {
+        float x = rand() % screenWidth;
+        float y = rand() % screenHeight;
+        
+        float intensity = (rand() % 50) / 100.0f * gNoiseIntensity * 0.3f;
+        glColor4f(intensity, intensity, intensity, intensity * 0.4f);
+        glVertex2f(x, y);
+    }
+    
+    // Dead pixels
+    srand(54321);
+    int deadPixels = screenWidth * screenHeight / 50000;
+    for (int i = 0; i < deadPixels; i++) {
+        float x = rand() % screenWidth;
+        float y = rand() % screenHeight;
+        
+        glColor4f(0.0f, 0.0f, 0.0f, 0.8f);
         glVertex2f(x, y);
     }
     
     glEnd();
     
-    if ((gFrameCounter % 120) < 3) {
-        glColor4f(1.0f, 1.0f, 1.0f, 0.3f);
+    // Random scan line interference (less frequent)
+    if ((gFrameCounter % 180) < 2) {
+        glColor4f(1.0f, 1.0f, 1.0f, 0.2f);
         glLineWidth(1.0f);
         
         glBegin(GL_LINES);
-        for (int i = 0; i < 5; i++) {
+        srand(gFrameCounter);
+        for (int i = 0; i < 3; i++) {
             float y = rand() % screenHeight;
+            float alpha = 0.1f + (rand() % 20) / 100.0f;
+            glColor4f(alpha, alpha, alpha, alpha);
             glVertex2f(0, y);
             glVertex2f(screenWidth, y);
         }
         glEnd();
+    }
+    
+    // Occasional "hot pixel" clusters
+    if ((gFrameCounter % 300) < 5) {
+        srand(gFrameCounter / 10);
+        int clusters = 2 + rand() % 4;
+        for (int c = 0; c < clusters; c++) {
+            float centerX = rand() % screenWidth;
+            float centerY = rand() % screenHeight;
+            
+            glBegin(GL_POINTS);
+            glPointSize(2.0f);
+            for (int p = 0; p < 8; p++) {
+                float x = centerX + (rand() % 6) - 3;
+                float y = centerY + (rand() % 6) - 3;
+                float intensity = 0.6f + (rand() % 40) / 100.0f;
+                glColor4f(intensity, intensity, intensity, 0.7f);
+                glVertex2f(x, y);
+            }
+            glEnd();
+            glPointSize(1.0f);
+        }
     }
 }
 
