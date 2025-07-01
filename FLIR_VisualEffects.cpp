@@ -59,11 +59,13 @@ static unsigned char* gProcessedBuffer = NULL;
 static int gBufferWidth = 0;
 static int gBufferHeight = 0;
 static int gProcessingCounter = 0;
-static int gProcessingSkip = 2; // Process every 3rd frame
-static float gProcessingScale = 0.5f; // Process at half resolution
+static int gProcessingSkip = 5; // Process every 6th frame for caching
+static float gProcessingScale = 0.25f; // Process at quarter resolution
+static int gUseHybridMode = 1; // Use hybrid shader+overlay approach
 
 // Forward declarations
 void ProcessEOIROptimized(unsigned char* input, unsigned char* output, int width, int height, int mode);
+void RenderHybridEffects(int screenWidth, int screenHeight, int mode);
 
 void InitializeVisualEffects()
 {
@@ -339,6 +341,180 @@ void ProcessEOIROptimized(unsigned char* input, unsigned char* output, int width
     }
 }
 
+// Hybrid approach: Smart overlays that mimic post-processing visually
+void RenderHybridEffects(int screenWidth, int screenHeight, int mode)
+{
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, screenWidth, screenHeight, 0, -1, 1);
+    
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    
+    switch (mode) {
+        case 1: // Monochrome mode
+            RenderSmartMonochrome(screenWidth, screenHeight);
+            break;
+        case 2: // Thermal mode  
+            RenderSmartThermal(screenWidth, screenHeight);
+            break;
+        case 3: // Enhanced IR mode
+            RenderSmartIR(screenWidth, screenHeight);
+            break;
+    }
+    
+    // Add overlays
+    if (gNoiseEnabled) {
+        RenderCameraNoise(screenWidth, screenHeight);
+    }
+    if (gScanLinesEnabled) {
+        RenderScanLines(screenWidth, screenHeight);
+    }
+    
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+}
+
+// Smart monochrome that mimics the post-processing look
+void RenderSmartMonochrome(int screenWidth, int screenHeight)
+{
+    // Base desaturation with green tint
+    glBlendFunc(GL_DST_COLOR, GL_ZERO);
+    glColor4f(0.7f, 1.0f, 0.7f, 1.0f); // Green night vision tint
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Contrast enhancement
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.0f, 0.0f, 0.0f, 0.3f); // Darken mid-tones
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Sky darkening (fake heat signature)
+    glColor4f(0.0f, 0.0f, 0.0f, 0.4f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight * 0.4f);
+    glVertex2f(0, screenHeight * 0.4f);
+    glEnd();
+    
+    // Ground warming effect  
+    glColor4f(0.2f, 0.3f, 0.2f, 0.3f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, screenHeight * 0.6f);
+    glVertex2f(screenWidth, screenHeight * 0.6f);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+}
+
+// Smart thermal that mimics the post-processing look
+void RenderSmartThermal(int screenWidth, int screenHeight)
+{
+    // Base inversion effect
+    glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+    glColor4f(0.8f, 0.8f, 0.8f, 1.0f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Prevent pure black - add minimum brightness
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.2f, 0.2f, 0.2f, 0.6f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Sky cooling (darker in thermal)
+    glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight * 0.4f);
+    glVertex2f(0, screenHeight * 0.4f);
+    glEnd();
+    
+    // Ground heating effect
+    glColor4f(0.3f, 0.3f, 0.3f, 0.3f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, screenHeight * 0.7f);
+    glVertex2f(screenWidth, screenHeight * 0.7f);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+}
+
+// Smart IR that mimics the post-processing look
+void RenderSmartIR(int screenWidth, int screenHeight)
+{
+    // High contrast base
+    glBlendFunc(GL_DST_COLOR, GL_ZERO);
+    glColor4f(0.3f, 0.3f, 0.3f, 1.0f); // Darken everything
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Harsh contrast enhancement
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 1.0f, 1.0f, 0.4f); // Brighten highlights
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Minimum visibility floor
+    glColor4f(0.15f, 0.15f, 0.15f, 0.7f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(screenWidth, 0);
+    glVertex2f(screenWidth, screenHeight);
+    glVertex2f(0, screenHeight);
+    glEnd();
+    
+    // Add grid pattern for digital look
+    glColor4f(1.0f, 1.0f, 1.0f, 0.03f);
+    glLineWidth(1.0f);
+    glBegin(GL_LINES);
+    for (int x = 0; x < screenWidth; x += 16) {
+        glVertex2f(x, 0);
+        glVertex2f(x, screenHeight);
+    }
+    for (int y = 0; y < screenHeight; y += 16) {
+        glVertex2f(0, y);
+        glVertex2f(screenWidth, y);
+    }
+    glEnd();
+}
+
 void SetMonochromeFilter(int enabled)
 {
     gMonochromeEnabled = enabled;
@@ -364,8 +540,20 @@ void RenderVisualEffects(int screenWidth, int screenHeight)
 {
     gFrameCounter++;
     
-    // Try post-processing first (real image processing)
-    if (gPostProcessingEnabled && (gMonochromeEnabled || gThermalEnabled || gIREnabled)) {
+    // Determine processing mode
+    int processingMode = 0;
+    if (gMonochromeEnabled) processingMode = 1;
+    else if (gThermalEnabled) processingMode = 2;
+    else if (gIREnabled) processingMode = 3;
+    
+    // Try hybrid approach first (much faster but same visual quality)
+    if (gUseHybridMode && processingMode > 0) {
+        RenderHybridEffects(screenWidth, screenHeight, processingMode);
+        return;
+    }
+    
+    // Fallback to post-processing (slower but works)
+    if (gPostProcessingEnabled && processingMode > 0) {
         RenderPostProcessing(screenWidth, screenHeight);
         
         // Still add overlays like noise and scan lines

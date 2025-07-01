@@ -46,6 +46,12 @@ void RenderIRFilter(int screenWidth, int screenHeight);
 void RenderCameraNoise(int screenWidth, int screenHeight);
 void RenderScanLines(int screenWidth, int screenHeight);
 void CycleVisualModes();
+
+// Hybrid rendering functions
+void RenderHybridEffects(int screenWidth, int screenHeight, int mode);
+void RenderSmartMonochrome(int screenWidth, int screenHeight);
+void RenderSmartThermal(int screenWidth, int screenHeight);
+void RenderSmartIR(int screenWidth, int screenHeight);
 void GetVisualEffectsStatus(char* statusBuffer, int bufferSize);
 
 #ifdef __cplusplus
