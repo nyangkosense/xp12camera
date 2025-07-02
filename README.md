@@ -1,7 +1,7 @@
-![20250626121507_1](https://github.com/user-attachments/assets/8f6e6e33-3dd6-4355-b80e-4718c5836063)
-
 FLIR Camera Plugin for X-Plane 12
 ===================================
+
+![20250701203427_1](https://github.com/user-attachments/assets/d574a85c-31c4-4cac-a477-649f901ee918)
 
 Realistic military-style FLIR camera simulation with belly-mounted positioning,
 optical zoom, thermal overlay effects, and targeting systems.
@@ -48,6 +48,10 @@ Installation
 1. Build plugin with make
 2. Copy .xpl to X-Plane/Resources/plugins/
 3. Install FLIR_HUD.lua in FlyWithLua scripts folder
+
+Media
+------
+![20250626121507_1](https://github.com/user-attachments/assets/8f6e6e33-3dd6-4355-b80e-4718c5836063)
 
 License
 -------
