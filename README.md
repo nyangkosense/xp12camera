@@ -3,8 +3,7 @@ FLIR Camera Plugin for X-Plane 12
 
 ![20250701203427_1](https://github.com/user-attachments/assets/d574a85c-31c4-4cac-a477-649f901ee918)
 
-Realistic military-style FLIR camera simulation with belly-mounted positioning,
-optical zoom, thermal overlay effects, and targeting systems.
+Realistic military-style FLIR camera simulation with belly-mounted positioning, optical zoom, thermal overlay effects, and targeting systems. This Repo contains a lua script (FLIR_HUD.lua) which dislpays the white text with the Data on screen. This script can easily be enhanced or modified in arbitrary ways - green text, no text, more info etc. This does not affect the actual Plugin, as it is basically just an overlay "HUD".
 
 Features
 --------
