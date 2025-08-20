@@ -48,10 +48,6 @@
 static XPLMHotKeyID gActivateKey = NULL;
 static XPLMHotKeyID gZoomInKey = NULL;
 static XPLMHotKeyID gZoomOutKey = NULL;
-static XPLMHotKeyID gPanLeftKey = NULL;
-static XPLMHotKeyID gPanRightKey = NULL;
-static XPLMHotKeyID gTiltUpKey = NULL;
-static XPLMHotKeyID gTiltDownKey = NULL;
 static XPLMHotKeyID gThermalToggleKey = NULL;
 static XPLMHotKeyID gFocusLockKey = NULL;
 
@@ -76,10 +72,6 @@ static float gMouseSensitivity = 0.2f;
 static void ActivateFLIRCallback(void* inRefcon);
 static void ZoomInCallback(void* inRefcon);
 static void ZoomOutCallback(void* inRefcon);
-static void PanLeftCallback(void* inRefcon);
-static void PanRightCallback(void* inRefcon);
-static void TiltUpCallback(void* inRefcon);
-static void TiltDownCallback(void* inRefcon);
 static void ThermalToggleCallback(void* inRefcon);
 static void FocusLockCallback(void* inRefcon);
 static int FLIRCameraFunc(XPLMCameraPosition_t* outCameraPosition, int inIsLosingControl, void* inRefcon);
@@ -105,10 +97,6 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     gActivateKey = XPLMRegisterHotKey(XPLM_VK_F9, xplm_DownFlag, "Activate FLIR Camera", ActivateFLIRCallback, NULL);
     gZoomInKey = XPLMRegisterHotKey(XPLM_VK_EQUAL, xplm_DownFlag, "FLIR Zoom In", ZoomInCallback, NULL);
     gZoomOutKey = XPLMRegisterHotKey(XPLM_VK_MINUS, xplm_DownFlag, "FLIR Zoom Out", ZoomOutCallback, NULL);
-    gPanLeftKey = XPLMRegisterHotKey(XPLM_VK_LEFT, xplm_DownFlag, "FLIR Pan Left", PanLeftCallback, NULL);
-    gPanRightKey = XPLMRegisterHotKey(XPLM_VK_RIGHT, xplm_DownFlag, "FLIR Pan Right", PanRightCallback, NULL);
-    gTiltUpKey = XPLMRegisterHotKey(XPLM_VK_UP, xplm_DownFlag, "FLIR Tilt Up", TiltUpCallback, NULL);
-    gTiltDownKey = XPLMRegisterHotKey(XPLM_VK_DOWN, xplm_DownFlag, "FLIR Tilt Down", TiltDownCallback, NULL);
     gThermalToggleKey = XPLMRegisterHotKey(XPLM_VK_T, xplm_DownFlag, "FLIR Visual Effects Toggle", ThermalToggleCallback, NULL);
     gFocusLockKey = XPLMRegisterHotKey(XPLM_VK_SPACE, xplm_DownFlag, "FLIR Focus/Lock Target", FocusLockCallback, NULL);
 
@@ -119,10 +107,6 @@ PLUGIN_API void XPluginStop(void)
     if (gActivateKey) XPLMUnregisterHotKey(gActivateKey);
     if (gZoomInKey) XPLMUnregisterHotKey(gZoomInKey);
     if (gZoomOutKey) XPLMUnregisterHotKey(gZoomOutKey);
-    if (gPanLeftKey) XPLMUnregisterHotKey(gPanLeftKey);
-    if (gPanRightKey) XPLMUnregisterHotKey(gPanRightKey);
-    if (gTiltUpKey) XPLMUnregisterHotKey(gTiltUpKey);
-    if (gTiltDownKey) XPLMUnregisterHotKey(gTiltDownKey);
     if (gThermalToggleKey) XPLMUnregisterHotKey(gThermalToggleKey);
     if (gFocusLockKey) XPLMUnregisterHotKey(gFocusLockKey);
 
@@ -236,39 +220,6 @@ static float GetZoomBasedSensitivity(float baseSpeed)
     return fmaxf(finalSensitivity, minSensitivity);
 }
 
-static void PanLeftCallback(void* inRefcon)
-{
-    if (gCameraActive && !IsSimpleLockActive()) {
-        float speed = GetZoomBasedSensitivity(0.5f);
-        gCameraPan -= speed;
-        if (gCameraPan < -180.0f) gCameraPan += 360.0f;
-    }
-}
- 
-static void PanRightCallback(void* inRefcon)
-{
-    if (gCameraActive && !IsSimpleLockActive()) {
-        float speed = GetZoomBasedSensitivity(0.5f);
-        gCameraPan += speed;
-        if (gCameraPan > 180.0f) gCameraPan -= 360.0f;
-    }
-}
- 
-static void TiltUpCallback(void* inRefcon)
-{
-    if (gCameraActive && !IsSimpleLockActive()) {
-        float speed = GetZoomBasedSensitivity(0.5f);
-        gCameraTilt = fminf(gCameraTilt + speed, 45.0f);
-    }
-}
- 
-static void TiltDownCallback(void* inRefcon)
-{
-    if (gCameraActive && !IsSimpleLockActive()) {
-        float speed = GetZoomBasedSensitivity(0.5f);
-        gCameraTilt = fmaxf(gCameraTilt - speed, -90.0f);
-    }
-}
  
 static void ThermalToggleCallback(void* inRefcon)
 {

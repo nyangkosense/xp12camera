@@ -11,10 +11,10 @@ Features
 --------
 - Belly-mounted camera positioning under aircraft
 - True optical zoom (1x-64x range)
-- Pan/tilt controls via mouse or keyboard
+- Pan/tilt controls via mouse
 - Target lock system with visual feedback
 - Multiple visual modes: standard, monochrome, thermal, IR
-- Military-style HUD overlay with telemetry (lua script)
+- (OPTIONAL) Military-style HUD overlay with telemetry (lua script / FlyWithLua)
 - Camera noise and scan line effects
 - Real-time flight data display
 
@@ -22,7 +22,6 @@ Controls
 --------
 F9      - Toggle FLIR camera on/off
 +/-     - Zoom in/out
-Arrows  - Pan/tilt camera
 Space   - Lock/unlock target
 T       - Cycle visual modes
 Mouse   - Pan/tilt when unlocked
